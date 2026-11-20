@@ -372,6 +372,23 @@ Also part of Record E, from a second reviewer's probe: no drop larger than 1 on 
 
 Row 4 is Claim 10 (c) restated. Rows 1 to 3 are readings, not theorems. In row 3 an exact oracle has no hidden sample, so it has no fork of this kind.
 
+### 7.6 Predictions Made From the Reading
+
+Claim 14 and the contracts are worth keeping only if they predict. Each prediction below was written before the code it concerns was read. For the first one the order rests on the author's word. The other two were pushed to this repository before the check, so the push time of the commit that added them is their timestamp. A miss stays on this list.
+
+**Prediction 1, scored: a miss.** The layer-3 loader checks each adapter's certificate alone. The norm of a sum of updates is not a function of the norms of its parts, so the per-adapter certificate is a quotient that is not closed under stacking. A deterministic rule on such a quotient is void. So the stack check was predicted to be missing or unsound.
+It is neither. The loader bounds a stack of `N` adapters by `N` times the sum of the parts, which is the Cauchy-Schwarz worst case. That is the other branch Section 7.3 allows: a specification that keeps every possible image stays sound and pays in looseness.
+The price was then measured (`source claim`, reproducer in the issue named in Section 8). Each adapter in a stack of `N` gets the joint bound divided by `N` squared, where orthogonal adapters would need only the bound divided by `N`. A composed certificate cannot relax the rule.
+Scored strictly, the reading named the place where a rule had to choose between two branches. It did not say which branch the code took.
+
+**Prediction 2, open (Contracts 2 and 3).** Stage 3 of the layer-3 loader runs what its source calls verifier-owned deterministic canary checks before an adapter is activated. Predicted: the canary prompts and expected results are a fixed list that whoever builds an adapter can read, and a Stage 3 pass is recorded with no statement of its oracle class.
+A small fixed list is a sampled oracle. Once it is known, an adapter can be fitted to it, which is Claim 7. Known when this was written: the repository ships a file named `schemas/verifier-canaries.json`, and the mount routine refuses canaries that an adapter supplies.
+It is a hit if both parts hold on current main. It is a miss if the canaries are hidden from the builder, or are drawn fresh for each mount from a set the builder cannot list, or if the receipt names the pass as a wiring test and not as evidence about the adapter.
+
+**Prediction 3, open (Contract 1, clause 4).** R4 was stated for Python flags. Its analogue in Rust is the build profile. A `debug_assert!` and the check for integer overflow exist in a debug build and are removed in a release build by default.
+Predicted: at least one gate written in Rust in the five layers has a `debug_assert!` on a validation path, or does unchecked arithmetic or a narrowing cast on an integer parsed from a submission while its release profile leaves overflow checks off.
+It is a hit if one such site can change a verdict or wrap on a value the submitter chooses. It is a miss if no such site is found in the Rust code of the five layers. Nothing was known about that code when this was written beyond the fact that layer 5 prints floats from Rust.
+
 ## 8. What Each Layer Could Adopt
 
 Every entry in the third column is a `hypothesis`. None is merged into a default branch. State on 2026-11-20: every item named is open, except that the two `mcproof` fixes in the matrix are merged into a feature branch and not into main.
@@ -383,6 +400,7 @@ Each issue or pull request is named once in this document. The matrix names the 
 | 1, clause 5 | L3 `siliconcordat/warp` | Compare the path the server lists with the path that was hashed. Hash before the server starts. | issue 11 |
 | 1, clause 5 | L3 `siliconcordat/warp` | Read flags and the base digest from the running process. Mark anything that was not measured as declared. | issue 12 |
 | 1, clause 5 | L3 `siliconcordat/warp`, L2 `siliconcordat/weft` | Recompute the certificate numbers from the tensors of the file to be served, in exact integers. Require `alpha` equal to rank. | issue 13, with a rational checker for the spectral form drafted as pull request 7 in this repository |
+| Section 7 | L3 `siliconcordat/warp` | Compute the joint numbers of a stack from its concatenated factors, in place of the worst-case rule and a declared composed certificate. | issue 15 |
 | 1, clause 3 | L5 `siliconcordat/mde`, with L4 and L3 | No floats inside a hashed body. Scales as an integer numerator over a power of two. One file of test vectors run by every layer. | issue 7 |
 | 1, clause 5 | L4 `siliconcordat/exo` | Scales with a denominator of 1024, rounded down. | issue 7 there |
 | 1, clause 5 | L4 `siliconcordat/exo` | An outcome other than pending carries a digest that resolves to a ledger receipt. | issue 8 there |
