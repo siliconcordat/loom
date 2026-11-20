@@ -62,6 +62,7 @@ A relation is a rule about two or more runs of the same gate. Testing software t
 | R5 isolation | Every named check has a fixture that only that check rejects. In another form: deleting the check changes the verdict of at least one fixture. | The check can be deleted with every test still passing. | evidence for 1 |
 
 For a gate that reports every failing check, the two forms of R5 agree. For a gate that stops at its first failure, only the second form can be tested. R5 is the coverage rule known as modified condition/decision coverage, applied to trust checks (`source claim`: Chilenski and Miller, 1994).
+Its deletion form has been measured on a verifier before. Hill (2026) disabled the refusal statements of a verifier for evidence bundles one at a time, and reports that 75 of 112 could be deleted with the whole suite and every tamper fixture still passing (`source claim`: arXiv 2608.26183).
 
 **Claim 1 (`verified`).** A gate that satisfies clauses 1 to 4 satisfies R1, R2, R3 and R4 on every input. So each relation is a necessary condition of the contract. A violation is a pair of runs, and finding it needs no knowledge of `T`.
 
@@ -327,6 +328,7 @@ For a Markov chain, closure of a partition is lumpability (`source claim`: Kemen
 *Proof.* (a) The negation of the definition is the existence of a fork. Verifying one evaluates `T(x)` and `T(y)`.
 (b) Let `T` be closed and accepted without evaluating `T(x0)`. Pick `z` with `phi(z) != phi(T(x0))` and let `T'` equal `T` except `T'(x0) = z`. Pick `y != x0` in the class of `x0`. Closure of `T` gives `phi(T'(y)) = phi(T(y)) = phi(T(x0)) != phi(T'(x0))`, so `x0, y` is a fork of `T'`.
 The checker sees the same answers on `T'` as on `T`, so it accepts `T'`. This is a standard adversary argument.
+The nearest published bound found is for another property: testing whether an operation given as an oracle is associative needs on the order of the square of the set's size in queries (`source claim`: Rajagopalan and Schulman, as cited by Le Gall and Yoshida, 2011).
 (c) At a fork the two successors have different images. A deterministic specification allows one of them at most.
 
 Part (b) is about a checker that treats the step as a black box. A proof about the text of the rules that define `T` is another kind of certificate and is outside this statement.
@@ -360,7 +362,7 @@ A lower bound `h` on the keys still to play can be replayed on a real winning ro
 - Used as a bound, that quotient's exact distance drops by 2 at four of those keys. The other 15 keys with no edge do not break the value conditions, so the edge check finds more than the value check.
 - The repository's shipped bounds show no violation on 66 catalogued routes and 3,063 keys.
 
-Also part of Record E, from a second reviewer's probe: no drop larger than 1 on 15,592 further legal steps off the routes, a count the hub plan records. The probe also met 313 successor states that the bound could not evaluate. That count is not published.
+Also part of Record E, from a second reviewer's probe: no drop larger than 1 on 15,592 further legal steps off the routes, a count the hub plan records. The probe also met 313 successor states that the bound could not evaluate, each reached after a hero dies. Section 8 names the issue that records them.
 
 ### 7.5 The Four Contracts as Closure Conditions
 
@@ -418,12 +420,14 @@ Each issue or pull request is named once in this document. The matrix names the 
 | 1, clauses 2 and 3 | `ahrazzle/soko`, `Proven-Commons/mcproof` | Check the type of a field before its value: a flag is a boolean and a count is a non-negative integer. A certificate marked verified with no witness fails whether or not it names a floor. | issue 74 in `soko`, issue 13 in `mcproof` |
 | 1, clause 3 | `Foundation-0/quotient-lp-bounds` | One accepted spelling of a rational in the second checker, in lowest terms and in ASCII digits. | issue 1 there |
 | 1, relation R5 | `ahrazzle/soko`, `Proven-Commons/mcproof`, `Foundation-0/quotient-lp-bounds` | One fixture per check that only that check rejects, with the test matching the full rule name. The deletion loop then tests that the fixture set is complete. | issue 75 in `soko`, issue 14 in `mcproof`, issue 2 in `quotient-lp-bounds` |
+| 1, relation R5 | `ahrazzle/soko` | Make every listed must-fail control run the checker on a corrupted input. One control in a prover receipt is true by construction. | issue 77 |
 | 1, clause 4 | `aska-physical/fibral-rigidity` | Checks that raise, in place of bare asserts. A bound recorded in the certificate. | the fix measured in the matrix |
 | 1, clause 4 | `aska-physical/cfrp-masts` | The same change for its five bare asserts, so that a certificate written under `python3 -O` cannot record a claim the plain run rejects. | issue 3 there |
 | 2 | `Proven-Commons/mcproof`, then L4 | Record the oracle gap per family in every repair-loop receipt. Do not stop a loop on an oracle whose recorded gap is above a registered threshold. | issue 12 there |
 | 3 | `Moissanite-Labs/weft-loom`, then L4 | Run the preregistered comparison of feedback detail. Write the oracle class into the receipt format. | draft pull request 38 |
 | 4 | L1 `siliconcordat/loom`, L4 | Bind each audit verdict to the digest of the state before adaptation. Report the squared sine of each audit against the adjustable directions. | none yet |
 | Section 7 | `ahrazzle/soko` | Replay every shipped bound on every catalogued route in CI. Expose per-state values from the native engine so they can be replayed too. | issue 71, with draft pull request 72 |
+| Section 7 | `ahrazzle/soko` | Give the operator-counting bound a stated result for a state that can no longer be won, in place of an error about a matrix. | issue 76 |
 | Section 7 | `ahrazzle/soko` | Keep the record that compares the published floors for one room with move sums on reachable positions. It does not settle what those floors count. | draft pull request 73 |
 | all | L1 `siliconcordat/loom` | This document, the harness and its suite. | this change |
 
@@ -448,19 +452,21 @@ No statement in this document is claimed as new. The parts are known under these
 - A consumer that checks a supplied proof against its own safety policy: proof-carrying code (Necula, 1997). The policy there is the pinned rules here.
 - Relations between runs in place of an oracle: metamorphic testing (Chen, Cheung and Yiu, 1998).
 - Each condition shown to decide the outcome alone: modified condition/decision coverage (Chilenski and Miller, 1994).
+- Deleting each rejection statement of a verifier and counting the deletions that no test notices: refusal-site mutation testing (Hill, 2026).
 - Signing only what was measured: measured boot and remote attestation (Trusted Computing Group), and build provenance written by the build platform and not by its tenant (SLSA).
 - No floats inside hashed JSON: the JSON Canonicalization Scheme, RFC 8785, pins one number format, and the Matrix specification forbids floats in canonical JSON.
 - Residuals orthogonal to the regressors, and tests for misspecification built from them: least squares, and the specification tests of Ramsey (1969).
 - Reuse of held-out data: adaptive data analysis (Dwork, Feldman, Hardt, Pitassi, Reingold and Roth, 2015).
 - Quotients of a chain that keep the dynamics: lumpability (Kemeny and Snell, 1960).
 
-Three packagings were not found in a first search. Each search was one or two queries, so "not found in a first search" is the whole of the statement. The entries below are taken from the search notes and were not checked again for this document.
+Three packagings were not found as stated. A first search was one or two queries each. A second search by a separate reader ran eleven to fourteen queries each, in the vocabularies of several fields. Its verdict was the same for all three: every ingredient is known, and the packaged rule was not found.
+That is the whole of the statement. A search that finds nothing does not show that nothing exists. Hill (2026) was opened and checked again for this document. The other entries are taken from the search notes.
 
 | Packaging | Queries tried | Nearest work found |
 | --- | --- | --- |
-| The latch as a rule for adaptive loops: judge before adapting, void later audits for absorbed directions, count surviving audits by rank | "residual diagnostics invalid after adaptive fitting optimizer removes misspecification signal". "adaptive controller masks fault from residual-based fault detection". "halt learning when proxy metric and held-out anchor diverge". "two-loop learning, separate verification and validation channels, halt parameter adaptation on misspecification" | Ramsey (1969). Dwork and others (2015). Ljung, System Identification (1999), on residual analysis. Cheng and others (2018), where weighting derived from the data removed most of a measured signal. Bayarri and Berger (2000), on checks weakened by using the data twice |
-| The omission relation as a required test for gates that check proof certificates | "metamorphic testing of proof checkers certificate verifiers removing fields from witness must not turn reject into accept" | Chen, Cheung and Yiu (1998). Metamorphic testing of compilers for zero-knowledge proofs (2025) |
-| A return policy indexed by oracle class and written into the receipt format | "verifier feedback granularity binary verdict vs structured counterexample adaptive data analysis holdout leakage budget feedback policy by oracle type" | Dwork and others (2015). Blum and Hardt (2015). Counterexample-guided synthesis (Solar-Lezama and others, 2006). Counterexample-guided abstraction refinement (Clarke and others, 2000) |
+| The latch as a rule for adaptive loops: judge before adapting, void later audits for absorbed directions, count surviving audits by rank | "residual diagnostics invalid after adaptive fitting optimizer removes misspecification signal". "adaptive controller masks fault from residual-based fault detection". "halt learning when proxy metric and held-out anchor diverge". "two-loop learning, separate verification and validation channels, halt parameter adaptation on misspecification" | Ramsey (1969). Dwork and others (2015). Ljung, System Identification (1999), on residual analysis. Cheng and others (2018), where weighting derived from the data removed most of a measured signal. Bayarri and Berger (2000), on checks weakened by using the data twice. From the second search: the count of residual degrees of freedom in least squares, the redundancy count used for gross-error tests in data reconciliation, and reports that an adaptive controller can hide a fault from residual-based detection |
+| The omission relation as a required test for gates that check proof certificates | "metamorphic testing of proof checkers certificate verifiers removing fields from witness must not turn reject into accept" | Chen, Cheung and Yiu (1998). Metamorphic testing of compilers for zero-knowledge proofs (2025). From the second search: Hill (2026) measures the deletion form of R5 and does not state the omission relation. Chen and Furia (2018) test the opposite direction, that an equivalent variant of an accepted program stays accepted |
+| A return policy indexed by oracle class and written into the receipt format | "verifier feedback granularity binary verdict vs structured counterexample adaptive data analysis holdout leakage budget feedback policy by oracle type" | Dwork and others (2015). Blum and Hardt (2015). Counterexample-guided synthesis (Solar-Lezama and others, 2006). Counterexample-guided abstraction refinement (Clarke and others, 2000). From the second search: Jha and Seshia (2015) classify synthesis oracles by the kind of counterexample they return. No table by oracle class was found, and no source for the rule that an anchor returns nothing |
 
 Limits.
 
