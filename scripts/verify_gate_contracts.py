@@ -166,6 +166,14 @@ def check_status_rules(g):
     inferred.required_keys = None
     res = run(inferred, acc, rej)
     require(res["R2"]["required_source"].startswith("inferred") and len(res["R2"]["violations"]) == 9, "inferred required keys")
+    # 9. An in-process fast path that answers differently from the real run is an adapter error.
+    class Split(FnGate):
+        def run(self, text, meta, flags):
+            v = self.run_inproc(text, meta)
+            return g.Verdict(v.accept, v.value + "-real", v.codes)
+    res = run(Split(one), [fx("good", {"a": 1})], [fx("bad", {"a": 2})])
+    require(status(res)["R4"] == "fail" and res["R4"]["inproc_mismatches"] == ["good", "bad"],
+            "an in-process path that differs from the real run was not reported")
 
 
 ADAPTER_FILE = '''
@@ -618,10 +626,10 @@ class TestLatch(unittest.TestCase):
         census = run_latch_census(full_rank=0, rank_deficient=0)
         self.assertEqual(census["boundary"], 100)
         self.assertEqual(census["weighted"], 100)
-        self.assertGreater(census["boundary_strictly_between_0_and_1"], 50)
+        self.assertEqual(census["boundary_strictly_between_0_and_1"], 100)
 
     def test_doc09_c4_stationary_point_and_gradient_steps(self):
-        self.assertGreaterEqual(run_local_latch_census(), 50)
+        self.assertEqual(run_local_latch_census(), 60)
         self.assertEqual(run_descent_census(), 60)
 
     def test_doc09_c4_smallest_examples(self):
@@ -769,7 +777,7 @@ class TestReturnPath(unittest.TestCase):
         runs, accepted = check_exact_gate_is_sound_under_feedback()
         self.assertEqual(len(STRATEGIES), 2187)
         self.assertEqual(runs, 27 * 8 * 2187)             # 27 pairs with gate inside truth, 8 feedback maps
-        self.assertGreater(accepted, 0)
+        self.assertEqual(accepted, 266328)                  # the count quoted in docs/09 section 5.2
         self.assertEqual(check_unsound_gate_is_exploitable(), 64 - 27)
 
     def test_doc09_c3_detail_changes_speed_not_truth(self):
@@ -956,7 +964,9 @@ class TestClosure(unittest.TestCase):
 
     def test_doc09_c5_polarity_of_bounds(self):
         census = run_polarity_census()
-        self.assertEqual(census["systems"], 60)
+        # the counts quoted in docs/09 section 7.3
+        self.assertEqual(census, {"systems": 60, "specs_allowing_more": 694, "specs_allowing_less": 30026,
+                                  "unsound_bounds": 31680, "void_specs": 14720, "refuted_by_one_step": 31680})
         self.assertEqual(census["specs_allowing_more"] + census["specs_allowing_less"], 60 * 512)
         self.assertEqual(census["refuted_by_one_step"], census["unsound_bounds"])
         self.assertGreater(census["void_specs"], 0)
@@ -1066,8 +1076,8 @@ class TestQuotedNumbers(unittest.TestCase):
         self.assertTrue(goes_red(check_matched_audit_fires_first, F(3), F(4), F(0)))
         # Noise that already crosses the tolerance is outside the statement.
         self.assertTrue(goes_red(check_matched_audit_fires_first, F(3), F(329, 200), F(3)))
-        # Thousandths counted with 64-bit floats show no excess, so the count depends on the 32-bit step.
-        self.assertEqual(sum(F(k / 1000) > F(k, 1000) for k in range(1, 1001)) == 503, False)
+        # Thousandths counted with 64-bit floats give another count, so 503 depends on the 32-bit step.
+        self.assertEqual(sum(F(k / 1000) > F(k, 1000) for k in range(1, 1001)), 499)
 
 
 def print_report():

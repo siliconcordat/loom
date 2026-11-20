@@ -26,7 +26,7 @@ Under all four sits one object, the closure defect of a quotient (Section 7). A 
 - **Gate.** A deterministic program `G` that reads a submission `x` and returns `accept` or `reject`. An `accept` promotes a result: a change is merged, an adapter is mounted, a certificate is recorded as verified, a loop stops, or an alarm is cleared.
 - **Submission.** `x` has two parts. The artifact `a` is the thing the claim is about: the bytes to be served, the route, the proof, the residuals. The declaration `d` is everything else the submitter writes: statuses, flags, digests, numbers, and lists of things to check.
 - **Pinned rules `R`.** Data the gate's owner fixed before the submission existed and that the submitter cannot write. This is the root digest `h_oracle` of `docs/02` Axiom 1.
-  `R` names the checks, their thresholds, the allowed status words, and the required evidence `K`: the fields a submission must carry for the claim it asks to promote. `K` is not empty.
+  `R` names the checks, their thresholds, the allowed status words, and the required evidence `K`: the fields a submission must carry for the claim it asks to promote. `K` is not empty. Where `R` pins the allowed status words, the status is part of `K`.
 - **Measurement.** A value the gate computes itself from the bytes it is about to promote: the hash of the file the server opens, a flag read from the running process, a norm recomputed from the tensors.
 - **Truth.** The claim has a truth value `T(a)` fixed by the artifact and the pinned rules. The declaration cannot change it.
 - **Proposer.** Whoever or whatever writes submissions and can adapt to verdicts: a person, a search, a trained model.
@@ -65,7 +65,7 @@ For a gate that reports every failing check, the two forms of R5 agree. For a ga
 
 **Claim 1 (`verified`).** A gate that satisfies clauses 1 to 4 satisfies R1, R2, R3 and R4 on every input. So each relation is a necessary condition of the contract. A violation is a pair of runs, and finding it needs no knowledge of `T`.
 
-*Proof.* R1: an input that carries none of `K` fails a check by clause 2, because `K` is not empty. Where `R` pins the status words the status is required evidence, so a missing status fails by clause 2, and a status outside the list fails the status check that clause 1 pins. R2: clause 2.
+*Proof.* R1: an input that carries none of `K` fails a check by clause 2, because `K` is not empty. Where `R` pins the status words the status is in `K`, so a missing status fails by clause 2, and a status outside the list fails the status check that clause 1 pins. R2: clause 2.
 R3: a re-spelled value has another type or spelling. If a check reads it, that check fails by clause 3, which gives (i). If no check reads it, every check gets the input it got before, so the same checks fail. A rejected input therefore stays rejected in both cases, which gives (ii).
 R4: clause 4. The script checks the same on two toy gates, one built to the contract and one built to break each clause.
 
@@ -135,13 +135,13 @@ Notes.
 - **B.** The adapter lacked fixtures for two of the six checks it listed. Deleting each of the 20 checks in turn and running the repository's own tests leaves four with no test on the feature branch. The three rows that were not re-run carry the same adapter gap.
 - **C.** The first reading was `pass`. It came from the fixture set and from sampling 150 of 455 deletions. Running all 260 single top-level deletions accepts 11. One of them leaves a certificate marked verified with no witness and with its optimum flag false.
 - **D.** Most violations on accepted inputs are another spelling of a good value, such as the string `"true"` for `true`. They cost little. The costly cases are on rejected inputs, where a red flag written as `0`, `"false"` or with a trailing newline passes.
-  The earlier harness skipped `1` for `true` on rejected inputs. It therefore missed that writing one boolean as `1` switches off the check that two oracles agree, in both auditors.
+  The earlier harness skipped `1` for `true` on rejected inputs. It therefore missed that writing one boolean as `1` switches off the check that a claimed match between oracles names more than one oracle, in both auditors.
 - **E.** Each accepted spelling is the same rational number, so no false bound passes. The cost is which bytes were checked, and that the two checkers of that repository disagree about one file.
 - **F.** The first reading was 47 of 48. It came from the adapter, which kept only the text before the first colon of each reason. Deleting each of the 42 rejection branches in turn and running the repository's tests leaves 33 deletions with the tests still passing.
 - **G.** Nine of the thirteen are the R1 defect seen again: deleting the status leaves a certificate that main accepts. The other four are the same as in note H.
 - **H.** The four deletions are not introduced by that pull request. Main accepts the same certificates. Two of them delete the red flag itself, so an absent field reads as a good one.
 
-The harness in this repository names two of these readings differently. A sampled run with no violation is `not_shown`, and a planted assert that no fixture reaches is `exposed`. The table was not re-run with it.
+The harness in this repository names three of these readings differently. A sampled run with no violation is `not_shown`. So is an isolation pass on a gate that stops at its first failure, as in the last row. A planted assert that no fixture reaches is `exposed`. The table was not re-run with it.
 
 What the snapshot does not show: fixture coverage beyond what each adapter supplied, the unsampled part of each sampled run, and any gate that was not driven. The `mcproof` audit was called with no registry of witness digests, so its registry check was never reached.
 
@@ -154,7 +154,7 @@ What the snapshot does not show: fixture coverage beyond what each adapter suppl
 | L3 `warp` | A bundle with a null `adapter_path` passes all four stages of a mount. The adapter bytes are never hashed, so the digest in the bundle is only a label. | 2 |
 | L3 `warp` | The file Stage 1 hashed need not be the file the server loaded. A mount with a decoy file reports the file as verified while the server lists another path for that adapter id. | 5 |
 | L3 `warp` | Runtime flags and base model digests on both sides of the Stage 1 comparison come from the daemon's own config. The gate compares its config with itself. A mount asks the server for nothing that returns context size, binary identity or model digest. | 5 |
-| L3 `warp`, L2 `weft` | Stage 2 checks four certificate integers against bounds and never opens the adapter file. A file with one factor made 8 times larger mounts with the integers of the original file. Its squared Frobenius norm, the sum of its squared entries, is about 746.8 against a limit of 20. | 5 |
+| L3 `warp`, L2 `weft` | Stage 2 checks four certificate integers against bounds and never opens the adapter file. A file with one factor made 8 times larger mounts with the integers of the original file. The squared Frobenius norm of the update it applies, the sum of the squared entries, is about 746.8 against a limit of 20. | 5 |
 | L3 `warp`, L2 `weft` | A file with byte-identical factors and the header value `alpha` changed from 4 to 32 also mounts. Integers recomputed from its tensors equal the original ones. The server multiplies the update by `alpha` over rank (a claim from the llama.cpp source), so the applied update is 8 times the certified one. | 5 |
 | L5 `mde`, L4 `exo`, L3 `warp` | The zone manifest id is a SHA-256 over a body that holds floats. One language prints `1e-05` and another prints `0.00001`. A manifest written by `mde` with that scale and its own id is rejected by `warp` and `exo` as tampered. | 3 |
 | L4 `exo` | The bridge turns a scale into thousandths. For 503 of the 1,000 thousandths the nearest 32-bit float is above the certified fraction. Every multiple of 1/1024 is exact. | 5 |
@@ -218,7 +218,7 @@ The test is on the reply. A receipt that names its class as sampled or anchor ca
 
 Exactness is a statement about every input, so it holds for inputs chosen by any process, including one that has read the gate's answers. Detail changes whether and how fast a passing input is found. It does not change what a pass means.
 The script checks this exhaustively on a toy with three artifacts: every truth set, every gate whose accept set lies inside it, every map from an artifact to one bit of detail, and all 2,187 adaptive proposers of depth three. That is 472,392 loops, 266,328 of which end in an accept, and no accepted output is false.
-The converse is checked too. Each of the 37 gates that accept one false claim loses to a proposer that uses no feedback at all.
+The converse is checked too. There are 37 pairs of a truth set and a gate that accepts at least one false artifact. In each of them a proposer that uses no feedback at all gets a false artifact accepted.
 Feeding an exact verifier's counterexamples back to the proposer is the basis of counterexample-guided synthesis (`source claim`: Solar-Lezama and others, 2006).
 
 **Claim 6 (`verified`, toy only).** On the same toy with two proposals allowed, none of the 9 proposers that ignore feedback finds an accepted artifact for all 7 non-empty gates. One proposer that reads a single bit of detail does. This shows only that detail can change speed. It measures nothing about real repair loops.
@@ -267,7 +267,8 @@ Remarks, each checked by the script.
 
 - **Weights.** If adaptation minimises a weighted sum of squares `r^T W r`, then `Phi^T W r* = 0`, and the blind audits are the vectors `W Phi u`.
 - **Stationary points.** If the residual is a differentiable function `r(theta)` and adaptation stops at a stationary point of `|r(theta)|^2`, then `J^T r* = 0` for the Jacobian `J` there, and audits in the column space of `J` read zero. Parts (c) and (d) are not claimed for this case.
-- **Before convergence.** Each step of gradient descent on `|r|^2` with a positive step size at most the reciprocal of the largest eigenvalue of `Phi^T Phi` leaves the outside part of `r` exactly unchanged and strictly shrinks the inside part. The reading of an audit in the column space is bounded by the size of that inside part, so an alarm that falls during adaptation is expected whether or not the true gap closes.
+- **Before convergence.** Each step of gradient descent on half the squared norm, `|r|^2 / 2`, with a positive step size at most the reciprocal of the largest eigenvalue of `Phi^T Phi` leaves the outside part of `r` exactly unchanged and strictly shrinks the inside part.
+  The reading of an audit in the column space is bounded by the size of that inside part, so an alarm that falls during adaptation is expected whether or not the true gap closes.
 - **Rank-deficient `Phi`.** The residual `r*` is unique. The minimiser is not, so an outside quantity `c . theta` is fixed only for `c` in the row space. Smallest case: `Phi = [[1, 1]]`, `r0 = [2]`. Both `theta = (1, 1)` and `theta = (2, 0)` give a zero residual, and `c = (1, 0)` reads 1 and 2.
 
 **Contract 4.** (a) An audit verdict is recorded before adaptation and is bound to the state it was computed on. (b) An alarm that clears after adaptation is not evidence that the gap closed. (c) An audit counts after adaptation only by its outside part.
@@ -278,6 +279,7 @@ With `Phi` known, the squared sine `|(I - P) w|^2 / |w|^2` is computed from `w` 
 The script works in exact rational arithmetic. It checks parts (a), (b) and (d), and the general reading in (c), on 200 full-rank and 100 rank-deficient instances. It checks the squared sine on 100 more, the weighted form on 100, the stationary-point form on 60 and the gradient steps on 60.
 
 **Record C (`source claim`).** Recorded in the hub plan (`siliconcordat/.github` issue 5) and not reproduced here: a first run held on 1,500 exact rational instances. The same statement was then demonstrated on a table of 14 binned points committed in `Foundation-0/gravity` at commit 8f96c4b2.
+The hub plan states both results in words. The figures below come from the runs themselves, which are not published.
 A line was fitted with the table's own weights, and families of rank 1 to 4 were then absorbed by exact least squares. Each audit matched to a family member read exactly zero from the rank where that member entered, and was nonzero before. A probe outside every family kept a nonzero reading: 0.277 before, then 0.0402, 0.0302, 0.0170 and 0.0037.
 
 Limits of that demonstration. It shows a statement about the audit and nothing about the physics in that repository. Its test of outside anchors is weak.
@@ -292,7 +294,8 @@ An earlier form of the rule said that a collective audit warns before any single
 
 *Proof.* With noise `e` on the leaking residual, the audit fires from leak size `max(0, z s - e)` and the single check from `T - e`. The other residuals do not change. The first size is smaller because `z s < T` and `e < T`.
 
-**Record D (`source claim`).** A simulation recorded in the hub plan, with 64 residuals, 2,000 noise draws and `z = 1.645`. For a matched audit the collective test warned first for every leak shape tried, a one-residual leak included, at every tolerance of 3 noise widths or more. At `T = 4 s` the single check needed, by medians, 2.39 times the leak size for a one-residual leak and 8.44 times for a leak in all 64.
+**Record D (`source claim`).** A simulation whose outcome the hub plan states in words. The figures here come from the run itself, which is not published. It used 64 residuals, 2,000 noise draws and `z = 1.645`.
+For a matched audit the collective test warned first for every leak shape tried, a one-residual leak included, at every tolerance of 3 noise widths or more. At `T = 4 s` the single check needed, by medians, 2.39 times the leak size for a one-residual leak and 8.44 times for a leak in all 64.
 For a plain sum over all residuals, which does not know the leak's shape, the rule holds with a different threshold than first stated. The collective test warned first from a leak spread over 9, 6, 5, 4 and 3 residuals at tolerances of 3, 3.5, 4, 4.5 and 6 noise widths. The formula first stated gave no flip at 3 and then 24, 12, 9 and 5.
 The quantity that matters is the leak's component along the audit direction, not the leak's own norm. That is part (c) of Claim 10 read before adaptation.
 
@@ -352,7 +355,7 @@ A lower bound `h` on the keys still to play can be replayed on a real winning ro
 - Used as a bound, that quotient's exact distance drops by 2 at four of those keys. The other 15 keys with no edge do not break the value conditions, so the edge check finds more than the value check.
 - The repository's shipped bounds show no violation on 66 catalogued routes and 3,063 keys.
 
-Also part of Record E, from a second reviewer's probe recorded in the hub plan: no drop larger than 1 on 15,592 further legal steps off the routes, with 313 successor states that the bound could not evaluate.
+Also part of Record E, from a second reviewer's probe: no drop larger than 1 on 15,592 further legal steps off the routes, a count the hub plan records. The probe also met 313 successor states that the bound could not evaluate. That count is not published.
 
 ### 7.5 The Four Contracts as Closure Conditions
 
@@ -369,7 +372,7 @@ Row 4 is Claim 10 (c) restated. Rows 1 to 3 are readings, not theorems. In row 3
 
 ## 8. What Each Layer Could Adopt
 
-Every entry in the third column is a `hypothesis`. None is merged. State on 2026-11-20: every item named is open, except that the two `mcproof` fixes in the matrix are merged into a feature branch and not into main.
+Every entry in the third column is a `hypothesis`. None is merged into a default branch. State on 2026-11-20: every item named is open, except that the two `mcproof` fixes in the matrix are merged into a feature branch and not into main.
 Each issue or pull request is named once in this document. The matrix names the fix branches it measured. This table names the rest.
 
 | Contract | Layer or repository | What it could adopt | Open record |
@@ -394,7 +397,7 @@ Each issue or pull request is named once in this document. The matrix names the 
 
 ## 9. Falsification Conditions
 
-Claims 1, 5, 10, 12 and 13 are theorems and cannot be refuted by an observation. What can be refuted is that each contract earns its cost on real gates. An observation of any of the following counts against the contract named.
+Claims 1, 5, 10, 11, 12 and 13 are theorems and cannot be refuted by an observation. What can be refuted is that each contract earns its cost on real gates. An observation of any of the following counts against the contract named.
 
 1. **Harmless violations dominate (Contract 1).** Of the violations the harness reports on real gates for R1, for R2 on required evidence, and for R3 on rejected inputs, fewer than half are confirmed as defects by the gate's owner once the reproducer is read. Then the relations mostly flag intended behaviour.
 2. **The gap does not cost (Contract 2).** With early stopping switched off for the two families whose recorded gap is high, grader passes at the last turn do not rise. Then a false stop was not what the loop lost, and recording the gap earns no routing rule.
@@ -434,7 +437,7 @@ Limits.
 - The oracle gap is counted on 48 validation items per arm, against one grader. A grader can be wrong too.
 - Claim 5 is about soundness. It says nothing about speed, and nothing about whether the specification is the right one.
 - Claim 10 is exact for a residual that is linear in the adjustable parameters and for a least-squares minimiser. For other losses only the stationary-point remark is offered.
-- Claims 12 and 13 are for finite deterministic systems with unit step cost. Part (b) of Claim 12 is about a checker that evaluates the step as a black box.
+- Claims 12 and 13 are for finite systems given by one or more step maps, with unit step cost. Part (b) of Claim 12 is about a checker that evaluates the step as a black box.
 - The harness reads JSON artifacts and Python interpreter flags. It assumes a rejected fixture is rejected for its content. A fixture rejected only because a value has the wrong type can be reported as a re-spelling that passes. The reproducer shows the pair.
 
 ## 11. Check It
