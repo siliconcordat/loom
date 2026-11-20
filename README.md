@@ -26,18 +26,22 @@ This repository holds research, mathematical proofs, roofline arithmetic, and an
 | [`docs/05-spliceware-algebra-and-convergences.md`](docs/05-spliceware-algebra-and-convergences.md) | Unified splice algebra, vertical zone compilation, continuous-discrete duality, live `weft` E4 packing confirmation, and four cross-org convergences | Complete |
 | [`docs/06-unmerged-branch-excavation.md`](docs/06-unmerged-branch-excavation.md) | Live audit of 544 open PRs and 1,501 non-default branches across 103 verified-public repos across all 4 organizations | Complete |
 | [`docs/07-latent-lattice-convergence.md`](docs/07-latent-lattice-convergence.md) | Three-axis Latent Lattice (`arXiv:2611.21608`) convergence: shared-token isolation, KV-write poisoning rollback law, `L_0` cartridges, and L1 SRAM rooflines | Complete |
+| [`docs/08-exact-inertia-certificates.md`](docs/08-exact-inertia-certificates.md) | Exact `P M P* = L D L*` certificates for positive-semidefinite and inertia tests, trace-based rank bounds, a two-bar truss box, and a low-rank adapter spectral bound | Complete for the checker and bounds, adapter loader use is proposed |
 | [`scripts/verify_math.py`](scripts/verify_math.py) | Standard-library `unittest` suite checking every bound and roofline table in `docs/01` through `docs/04` | Passing (7/7) |
 | [`scripts/verify_convergences.py`](scripts/verify_convergences.py) | Standard-library `unittest` and simulation suite checking `docs/05` (zone compiler, cliff duality, quantized packing) | Passing (3/3) |
 | [`scripts/verify_lattice.py`](scripts/verify_lattice.py) | Standard-library `unittest` and rollout suite checking `docs/07` (shared-token isolation, `RMSNorm` bleed, KV re-poisoning, `L_0` decay, FiLM packing, L1 rooflines) | Passing (4/4) |
+| [`scripts/inertia_cert.py`](scripts/inertia_cert.py) | Standard-library exact checker for inertia certificates, used by the suite below | Verified by `scripts/verify_inertia.py` |
+| [`scripts/verify_inertia.py`](scripts/verify_inertia.py) | Standard-library `unittest` suite checking `docs/08` (property test, must-fail controls, rank bounds, truss matrices, adapter forgery) | Passing (28/28) |
 
 ## Check the Math
 
-Run all three deterministic verification suites with Python 3 (no external packages required):
+Run all four deterministic verification suites with Python 3 (no external packages required):
 
 ```bash
-python3 -B -W error -m unittest -v scripts/verify_math.py scripts/verify_convergences.py scripts/verify_lattice.py
-python3 -O -B -W error -m unittest -v scripts/verify_math.py scripts/verify_convergences.py scripts/verify_lattice.py
+python3 -B -W error -m unittest -v scripts/verify_math.py scripts/verify_convergences.py scripts/verify_lattice.py scripts/verify_inertia.py
+python3 -O -B -W error -m unittest -v scripts/verify_math.py scripts/verify_convergences.py scripts/verify_lattice.py scripts/verify_inertia.py
 python3 -B scripts/verify_lattice.py --report
+python3 -B scripts/verify_inertia.py --report
 ```
 
 ## Evidence Discipline
