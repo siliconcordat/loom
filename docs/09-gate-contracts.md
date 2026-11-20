@@ -141,6 +141,8 @@ Notes.
 - **G.** Nine of the thirteen are the R1 defect seen again: deleting the status leaves a certificate that main accepts. The other four are the same as in note H.
 - **H.** The four deletions are not introduced by that pull request. Main accepts the same certificates. Two of them delete the red flag itself, so an absent field reads as a good one.
 
+The findings in notes A to H that no earlier record covered are filed as issues in their own repositories. Section 8 names them.
+
 The harness in this repository names three of these readings differently. A sampled run with no violation is `not_shown`. So is an isolation pass on a gate that stops at its first failure, as in the last row. A planted assert that no fixture reaches is `exposed`. The table was not re-run with it.
 
 What the snapshot does not show: fixture coverage beyond what each adapter supplied, the unsampled part of each sampled run, and any gate that was not driven. The `mcproof` audit was called with no registry of witness digests, so its registry check was never reached.
@@ -235,7 +237,7 @@ One detailed answer exposed the sample. That each answer from held-out data can 
 "Detailed verifier feedback speeds repair" and "a holdout may leak at most one bit" are about different classes. The first is about exact oracles, where Claim 5 holds. The second is about sampled oracles, where Claim 7 holds. A loop that mixes them needs the class on every receipt, which is Contract 2.
 
 **Claim 8 (`hypothesis`).** Telling a proposer the signed exact amount by which each constraint failed lets it repair in fewer rounds than telling it only which constraint failed and where.
-A preregistered design with four feedback arms, fixed seeds and a paired test is open as a record. No registered run has been made and there is no result.
+A preregistered design with four feedback arms, fixed seeds and a paired test is open as a record. This document reports no result from it.
 
 **Claim 9 (`hypothesis`).** The anchor rule is a routing rule: when an exact check passes and an anchor fails, stop adapting the proposer and revise the specification. Section 6 gives the reason for the first half. An anchor fed back to the proposer becomes one more direction the proposer can absorb.
 The second half, that revising the specification then helps, is not shown here.
@@ -380,14 +382,18 @@ Each issue or pull request is named once in this document. The matrix names the 
 | 1, clause 2 | L3 `siliconcordat/warp` | Refuse a bundle whose adapter file was not hashed, unless the operator opts out. | issue 10, with draft pull request 14 |
 | 1, clause 5 | L3 `siliconcordat/warp` | Compare the path the server lists with the path that was hashed. Hash before the server starts. | issue 11 |
 | 1, clause 5 | L3 `siliconcordat/warp` | Read flags and the base digest from the running process. Mark anything that was not measured as declared. | issue 12 |
-| 1, clause 5 | L3 `siliconcordat/warp`, L2 `siliconcordat/weft` | Recompute the certificate numbers from the tensors of the file to be served, in exact integers. Require `alpha` equal to rank. | issue 13 |
+| 1, clause 5 | L3 `siliconcordat/warp`, L2 `siliconcordat/weft` | Recompute the certificate numbers from the tensors of the file to be served, in exact integers. Require `alpha` equal to rank. | issue 13, with a rational checker for the spectral form drafted as pull request 7 in this repository |
 | 1, clause 3 | L5 `siliconcordat/mde`, with L4 and L3 | No floats inside a hashed body. Scales as an integer numerator over a power of two. One file of test vectors run by every layer. | issue 7 |
 | 1, clause 5 | L4 `siliconcordat/exo` | Scales with a denominator of 1024, rounded down. | issue 7 there |
 | 1, clause 5 | L4 `siliconcordat/exo` | An outcome other than pending carries a digest that resolves to a ledger receipt. | issue 8 there |
 | 1, clauses 1 to 3 | L2 `siliconcordat/weft` | A strict header reader: duplicate keys, overlaps, gaps and a length that disagrees with type and shape are rejected. | issue 9, fix measured in the matrix |
 | 1, clauses 2 and 3 | `Proven-Commons/mcproof` | Full-string matches for digests and rationals. Reject a certificate that names no recognized status. | issues 8 and 9 there, fixes measured in the matrix |
 | 1, clauses 2 and 3 | `ahrazzle/soko` | The same two fixes, and must-fail controls one millionth past each exact bound. | issues 65, 66 and 67, fixes measured in the matrix |
+| 1, clauses 2 and 3 | `ahrazzle/soko`, `Proven-Commons/mcproof` | Check the type of a field before its value: a flag is a boolean and a count is a non-negative integer. A certificate marked verified with no witness fails whether or not it names a floor. | issue 74 in `soko`, issue 13 in `mcproof` |
+| 1, clause 3 | `Foundation-0/quotient-lp-bounds` | One accepted spelling of a rational in the second checker, in lowest terms and in ASCII digits. | issue 1 there |
+| 1, relation R5 | `ahrazzle/soko`, `Proven-Commons/mcproof`, `Foundation-0/quotient-lp-bounds` | One fixture per check that only that check rejects, with the test matching the full rule name. The deletion loop then tests that the fixture set is complete. | issue 75 in `soko`, issue 14 in `mcproof`, issue 2 in `quotient-lp-bounds` |
 | 1, clause 4 | `aska-physical/fibral-rigidity` | Checks that raise, in place of bare asserts. A bound recorded in the certificate. | the fix measured in the matrix |
+| 1, clause 4 | `aska-physical/cfrp-masts` | The same change for its five bare asserts, so that a certificate written under `python3 -O` cannot record a claim the plain run rejects. | issue 3 there |
 | 2 | `Proven-Commons/mcproof`, then L4 | Record the oracle gap per family in every repair-loop receipt. Do not stop a loop on an oracle whose recorded gap is above a registered threshold. | issue 12 there |
 | 3 | `Moissanite-Labs/weft-loom`, then L4 | Run the preregistered comparison of feedback detail. Write the oracle class into the receipt format. | draft pull request 38 |
 | 4 | L1 `siliconcordat/loom`, L4 | Bind each audit verdict to the digest of the state before adaptation. Report the squared sine of each audit against the adjustable directions. | none yet |
