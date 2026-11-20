@@ -484,6 +484,16 @@ def check_survivor_bound(Phi, audits, claimed_bound):
     return survivors
 
 
+def check_budget(Phi, r0, r, claimed_left):
+    """The leftover total: |r0|^2 splits exactly into the absorbed part and |r|^2, and the trace of I - P,
+    which is the expected |r|^2 for uncorrelated noise of unit width, equals claimed_left."""
+    absorbed = sub(r0, r)
+    require(dot(r0, r0) == dot(absorbed, absorbed) + dot(r, r), "the squared norm of r0 does not split into absorbed and left over")
+    m = len(r0)
+    trace = sum(outside_part([F(int(i == j)) for j in range(m)], Phi)[i] for i in range(m))
+    require(trace == claimed_left, f"the trace of I - P is {trace}, not the claimed {claimed_left}")
+
+
 def run_latch_census(seed=SEED, full_rank=200, rank_deficient=100, boundary=100):
     rng = random.Random(seed)
     out = {"full_rank": 0, "rank_deficient": 0, "boundary": 0, "boundary_strictly_between_0_and_1": 0, "weighted": 0}
@@ -503,6 +513,8 @@ def run_latch_census(seed=SEED, full_rank=200, rank_deficient=100, boundary=100)
             require(dot(other, other) == dot(r, r) + dot(mv(Phi, d), mv(Phi, d)), "theta is not a minimiser")
             # the residual after adaptation is the part of r0 outside the column space, by an independent route
             require(r == outside_part(r0, Phi), "post-adaptation residual is not the outside part of r0")
+            # the total that adaptation cannot remove, and its expected size for unit noise
+            check_budget(Phi, r0, r, m - rk)
             # whatever the true gap: adding any amount inside the column space changes nothing afterwards
             shifted = add(r0, mv(Phi, rvec(rng, k)))
             require(residual(Phi, shifted, fit(Phi, shifted)) == r, "the absorbed part of the gap changed the residual")
@@ -662,6 +674,10 @@ class TestLatch(unittest.TestCase):
         full = [[F(int(i == j)) for i in range(4)] for j in range(4)]
         self.assertEqual(check_survivor_bound(Phi, full, 2), 2)                # control: m - rank = 4 - 2
         self.assertTrue(goes_red(check_survivor_bound, Phi, full, 1))
+        r_ok = residual(Phi, r0, theta)
+        check_budget(Phi, r0, r_ok, 2)                                          # control: m - rank = 4 - 2
+        self.assertTrue(goes_red(check_budget, Phi, r0, r_ok, 3))                # a wrong count of what is left
+        self.assertTrue(goes_red(check_budget, Phi, r0, [r_ok[0] + F(1, 10**6)] + r_ok[1:], 2))   # the total does not split
         # A point that is not stationary fails the exact derivative test.
         A, B, c = [[F(1)], [F(2)]], [[F(1)]], [F(1), F(-1)]
         J = poly_jacobian(A, B, c, [F(1)])
