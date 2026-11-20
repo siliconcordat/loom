@@ -332,6 +332,11 @@ OVERLAP = {"M": [[ONE_S, ONE_S, ZERO_S], [ONE_S, ONE_S, ONE_S], [ZERO_S, ONE_S, 
 BAD_P = {"M": [[ONE_S, ZERO_S], [ZERO_S, "-1/1"]], "P": [0, 0],
          "L": [[ONE_S, ZERO_S], [ONE_S, ONE_S]], "D": [[ONE_S, ZERO_S], [ZERO_S, ZERO_S]]}
 
+# L = [[1, 1], [1, 1]] has a unit diagonal but a nonzero entry above it, so it is singular. With
+# D = I the identity holds for M = [[2, 2], [2, 2]], whose true inertia is (1,0,1), not (2,0,0).
+L_UPPER = {"M": [["2/1", "2/1"], ["2/1", "2/1"]], "P": [0, 1],
+           "L": [[ONE_S, ONE_S], [ONE_S, ONE_S]], "D": [[ONE_S, ZERO_S], [ZERO_S, ONE_S]]}
+
 
 def bump(s):
     f = lambda t: "%d/%d" % ((F(t) + 1).numerator, (F(t) + 1).denominator)
@@ -367,8 +372,11 @@ def controls():
     c = copy.deepcopy(GOOD); c["P"] = [0, 0, 2, 3]; v["P_not_permutation"] = c
     v["P_repeat_hides_negative_eigenvalue"] = BAD_P
     v["overlapping_D_blocks"] = OVERLAP
+    v["L_entry_above_diagonal"] = L_UPPER
     return v
 
+
+LONG = "1" * 5000  # past Python's default 4300-digit limit for integer strings
 
 RAW = {
     "float_in_json": json.dumps(GOOD).replace('"1/1"', "1.0", 1),
@@ -377,11 +385,14 @@ RAW = {
     "nan_constant": json.dumps(GOOD).replace('"1/1"', "NaN", 1),
     "truncated": json.dumps(GOOD)[:50],
     "zero_denominator": json.dumps(GOOD).replace('"1/1"', '"1/0"', 1),
+    "entry_past_digit_limit": json.dumps(GOOD).replace('"1/1"', '"%s/1"' % LONG, 1),
+    "json_integer_past_digit_limit": json.dumps(GOOD).replace('"P": [', '"P": [%s, ' % LONG, 1),
 }
 
 IDENTITY = "need(lhs == rhs,"
 CLAIM = "tuple(cl) == inertia"
-UNIT = 'need(L[i][j] == (ONE if i == j else ZERO) if j >= i else True, "L not unit lower triangular")'
+UNIT_DIAG = "need(L[i][j] == (ONE if i == j else ZERO)"
+L_ZERO_ABOVE = 'if j >= i else True, "L not unit lower triangular")'
 PERM = "and sorted(P) == list(range(n))"
 OVERLAP_G = 'need(not (D[i + 1][i] != ZERO and D[i + 2][i + 1] != ZERO), "overlapping D blocks")'
 HERM_M = 'need(M[i][j] == conj(M[j][i]), "M not Hermitian")'
@@ -394,7 +405,8 @@ MUTANTS = {
     "tamper_D_entry": (IDENTITY, "need(True or lhs == rhs,"),
     "tamper_M_entry": (IDENTITY, "need(True or lhs == rhs,"),
     "wrong_claimed_inertia": (CLAIM, "True"),
-    "non_unit_diagonal": (UNIT, "pass"),
+    "non_unit_diagonal": (UNIT_DIAG, "need(L[i][j] == (L[i][j] if i == j else ZERO)"),
+    "L_entry_above_diagonal": (L_ZERO_ABOVE, 'if j == i else True, "L not unit lower triangular")'),
     "P_repeat_hides_negative_eigenvalue": (PERM, "and True"),
     "overlapping_D_blocks": (OVERLAP_G, "pass"),
     "duplicate_key": (DUPES, ""),
@@ -642,6 +654,31 @@ class TestControls(unittest.TestCase):
         self.assertEqual(run(m, BAD_P), ("ACCEPT", (1, 0, 1)))
         H = [[(F(1), F(0)), Z], [Z, (F(-1), F(0))]]
         self.assertEqual(indep_inertia(H, False), (1, 1, 0))
+
+    def test_nonzero_entry_above_the_diagonal_of_l_gives_wrong_inertia_without_its_guard(self):
+        m = make_mutant(L_ZERO_ABOVE, 'if j == i else True, "L not unit lower triangular")', "mut_upper")
+        self.assertEqual(run(m, L_UPPER), ("ACCEPT", (2, 0, 0)))
+        H = [[(F(2), F(0))] * 2 for _ in range(2)]
+        self.assertEqual(indep_inertia(H, False), (1, 0, 1))
+
+    def test_every_row_of_the_two_by_two_block_table(self):
+        # The producer's pivoting only emits 2 by 2 blocks with a negative determinant, so the
+        # property test never reaches the other rows. Each block here is sent directly as D = M.
+        blocks = {
+            "det below zero": ((F(0), F(0)), (F(1), F(0)), (F(0), F(0)), (1, 1, 0)),
+            "det above zero, positive trace": ((F(2), F(0)), (F(1), F(0)), (F(2), F(0)), (2, 0, 0)),
+            "det above zero, negative trace": ((F(-2), F(0)), (F(1), F(0)), (F(-2), F(0)), (0, 2, 0)),
+            "det zero, positive trace": ((F(1), F(0)), (F(1), F(0)), (F(1), F(0)), (1, 0, 1)),
+            "det zero, negative trace": ((F(-1), F(0)), (F(1), F(0)), (F(-1), F(0)), (0, 1, 1)),
+            "complex, det above zero, negative trace": ((F(-3), F(0)), (F(1), F(1)), (F(-1), F(0)), (0, 2, 0)),
+            "complex, det zero, positive trace": ((F(2), F(0)), (F(1), F(1)), (F(1), F(0)), (1, 0, 1)),
+        }
+        for name, (a, b, c, want) in blocks.items():
+            H = [[a, b], [cconj(b), c]]
+            text = json.dumps({"M": [[fmt(x) for x in r] for r in H], "P": [0, 1],
+                               "L": [[ONE_S, ZERO_S], [ZERO_S, ONE_S]], "D": [[fmt(x) for x in r] for r in H]})
+            self.assertEqual(ic.check(text), want, name)
+            self.assertEqual(indep_inertia(H, b[1] != 0), want, name)
 
     def test_block_sign_count_is_checked_against_the_independent_method(self):
         m = make_mutant(BLOCK_SIGN, "    if det < 0:\n        return (2, 0, 0)", "mut_block")

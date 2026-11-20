@@ -4,7 +4,7 @@ This paper describes a way to decide, with no floating-point eigenvalues and no 
 A short checker multiplies it out in exact fractions and reads the answer from the factors. The checker is [`scripts/inertia_cert.py`](../scripts/inertia_cert.py). Every number below tagged `verified` can be rerun with [`scripts/verify_inertia.py`](../scripts/verify_inertia.py).
 
 The paper also proves a family of lower bounds on the rank of a positive semidefinite part of a matrix, and applies the certificate to two cases: a two-bar truss and a low-rank weight adapter. Statuses follow the Evidence Discipline in the `README`:
-`verified` means a rerunnable command and its output, `proposed` means a design not yet measured, `source claim` means a statement taken from an outside source and not reproduced here.
+`verified` means a rerunnable command and its output or a proof given here, `hypothesis` means a proposed mechanism with a test and a kill condition stated in advance, `source claim` means a statement taken from an outside source and not reproduced here.
 
 ## 1. The Problem in Plain Words
 
@@ -39,6 +39,7 @@ The inertia of `D` is the sum over its blocks. A `1 x 1` block contributes its s
 | zero, `a + c < 0` | one negative, one zero | `(0, 1, 1)` |
 
 When the determinant is zero and `b != 0`, `a c = |b|^2 > 0`, so `a` and `c` are nonzero with the same sign and `a + c != 0`. The table is complete.
+The suite sends one block for each row, real and complex, and compares the checker with the independent method. The producer in the suite never emits the last four rows. Its pivoting rule picks a `2 x 2` block only when both diagonal entries are small next to the off-diagonal one, and that forces a negative determinant. These direct tests are the only ones that reach those rows.
 
 The certificate is a JSON object with keys `M`, `P`, `L`, `D` and optionally `claim`. A real entry is a string `"p/q"`. A complex entry is a pair of such strings. `P[i]` is the row of `M` placed at position `i`. `claim` is a list `[positive, negative, zero]`.
 
@@ -59,11 +60,12 @@ The certificate is a JSON object with keys `M`, `P`, `L`, `D` and optionally `cl
 Item 7 includes a guard that is needed for correctness and not only for tidiness. If two `2 x 2` blocks overlap, a tridiagonal `D` can be misread blockwise. The suite uses `M = D = [[1,1,0],[1,1,1],[0,1,1]]`, whose true inertia is `(2, 1, 0)` (eigenvalues `1` and `1 ± sqrt(2)`).
 With the overlap guard removed, the checker accepts it and reports `(2, 0, 1)`. Item 5 is the same kind of guard. With a repeated index in `P`, a certificate for a different matrix passes the identity.
 The suite uses `M = diag(1, -1)` with `P = [0, 0]`, which an unguarded checker reports as `(1, 0, 1)` against the true `(1, 1, 0)`.
+The zero-above-the-diagonal part of item 6 is a third such guard. `L = [[1, 1], [1, 1]]` has a unit diagonal but is singular. With `D = I` it passes the identity for `M = [[2, 2], [2, 2]]`, and an unguarded checker reports `(2, 0, 0)` against the true `(1, 0, 1)`.
 
 ### 2.3 What the Checker Does Not Prove
 
 - It certifies the matrix it is given. It says nothing about where `M` came from. Binding that matrix to real bytes or measurements is a separate obligation of the caller. Section 5 shows a caller that recomputes `M` from the weights it holds.
-- It does not cap the size of numerators and denominators. A certificate with enormous integers costs time, not correctness.
+- It sets no limit of its own on the size of numerators and denominators. A certificate with enormous integers costs time, not correctness. Python refuses integer strings longer than 4,300 digits by default, and the checker then rejects the certificate.
 - Python's `Fraction`, `json` and the interpreter are trusted.
 - A floating-point matrix rounded to rationals certifies the rounded matrix, not the original.
 - A formal proof of the checker, for example in Lean, is not part of this work.
@@ -155,7 +157,7 @@ No instance violated any of them. A deliberately wrong right side (for example, 
 
 ### 4.1 Model (`source claim` for the model)
 
-Two pins sit at `(-1, 0)` and `(1, 0)`. A joint at `p` is held by two linear bars, one to each pin, with natural lengths `L1` and `L2` and unit stiffness. The elastic energy is `sum_i (1 / (2 L_i)) (|p - pin_i| - L_i)^2`. The model and its equilibria come from the `fibral-rigidity` repository.
+Two pins sit at `(-1, 0)` and `(1, 0)`. A joint at `p` is held by two linear bars, one to each pin, with natural lengths `L1` and `L2` and unit stiffness. The elastic energy is `sum_i (1 / (2 L_i)) (|p - pin_i| - L_i)^2`. The model and its equilibria come from pull request 5 of `aska-physical/fibral-rigidity`, at commit `4753275`.
 We did not reproduce that repository's own checks. We took the model as stated and recomputed every matrix below exactly.
 
 The lengths vary over the box `L1` in `[0.7, 1.3]`, `L2` in `[0.9, 1.5]`. At an equilibrium the stiffness matrix is the Hessian of the energy. It is positive definite when the equilibrium is stable.
@@ -238,9 +240,11 @@ The first row is the reason the recomputation step exists. The checker alone acc
 
 Times vary between runs and machines. The growth with `r` is the finding.
 
-### 5.5 Link to the Layer-3 Loader (`proposed`)
+### 5.5 Link to the Layer-3 Loader (`hypothesis`)
 
-The layer-3 repository `siliconcordat/warp` has an open issue about certificate numbers that are not recomputed from the adapter. The forgery case above is a small instance of that gap. The recomputation step in section 5.3 is a proposed shape for closing it. This paper does not change or claim anything about the loader.
+The layer-3 repository `siliconcordat/warp` has an open issue about certificate numbers that are not recomputed from the adapter. The forgery case above is a small instance of that gap. The recomputation step in section 5.3 is a proposed shape for closing it.
+
+The hypothesis fails if a loader that recomputes `Q(s)` from the weights it serves still accepts a certificate made for other weights, or if the recomputation and check exceed the loader's time budget (section 6). This paper does not change or claim anything about the loader.
 
 ## 6. Limits and Falsification Conditions
 
@@ -271,7 +275,7 @@ The layer-3 repository `siliconcordat/warp` has an open issue about certificate 
 | The truss matrices and inertias in section 4.2 | `verified` |
 | The two-bar model and its equilibria | `source claim` |
 | The adapter equivalence, including singular `G_B` | `verified` |
-| Forgery rejected by a recomputing loader | `verified` for the test loader, `proposed` for layer 3 |
+| Forgery rejected by a recomputing loader | `verified` for the test loader, `hypothesis` for layer 3 |
 | Check times at ranks 4 to 32 | `verified` for the machine and run shown |
 
 ## 8. Reproduce

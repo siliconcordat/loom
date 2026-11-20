@@ -40,8 +40,11 @@ def conj(a):
 
 
 def frac(s):
-    need(type(s) is str and NUM.fullmatch(s) is not None, "entry is not a string p/q: %r" % (s,))
-    return F(s)
+    need(type(s) is str and NUM.fullmatch(s) is not None, "entry is not a string p/q: %r" % (s[:40] if type(s) is str else s,))
+    try:
+        return F(s)
+    except ValueError as e:  # Python refuses integer strings past its digit limit (4300 by default)
+        raise CertError("entry too long: %s" % str(e)[:80])
 
 
 def entry(e):
@@ -72,8 +75,10 @@ def parse(text):
     try:
         return json.loads(text, object_pairs_hook=no_dupes,
                           parse_float=no_float, parse_constant=no_float)
-    except (json.JSONDecodeError, RecursionError) as e:
-        raise CertError("bad JSON: %s" % e)
+    except CertError:
+        raise
+    except (ValueError, RecursionError) as e:  # includes JSONDecodeError and the integer digit limit
+        raise CertError("bad JSON: %s" % str(e)[:80])
 
 
 def block_inertia(d):
