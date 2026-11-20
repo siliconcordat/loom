@@ -1,4 +1,4 @@
-"""Executable checks for docs/08 (exact inertia certificates).
+"""Executable checks for docs/10 (exact inertia certificates).
 
 Covers:
   1. The checker (scripts/inertia_cert.py) against an independent inertia method on random exact
@@ -17,7 +17,7 @@ method shares no code with the checker or the producer.
 Standard-library Python 3 only (Apache-2.0). No network. Run tests:
     python3 -B -W error -m unittest -v scripts/verify_inertia.py
     python3 -O -B -W error -m unittest -v scripts/verify_inertia.py
-Print the timing table quoted in docs/08:
+Print the timing table quoted in docs/10:
     python3 -B scripts/verify_inertia.py --report
 """
 

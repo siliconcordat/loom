@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact inertia checker for docs/08. Standard library only (Apache-2.0).
+"""Exact inertia checker for docs/10. Standard library only (Apache-2.0).
 
 Verifies a certificate P M P* = L D L* over Q(i) by exact multiplication and returns the
 inertia (positive, negative, zero eigenvalue counts) of the matrix M in the certificate.
