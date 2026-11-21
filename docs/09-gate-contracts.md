@@ -6,6 +6,8 @@ A gate is any program whose verdict promotes a result. A certificate auditor is 
 One principle carries the document: **a gate's verdict must not be movable by what it judges.** Four contracts follow from it. Each has a test that needs no knowledge of whether the claim under judgement is true.
 Each is set next to measurements made on the five layers and the working repositories on 2026-11-20.
 
+A sibling team adopted these contracts and extended them into a nine-gate research protocol (`Foundation-0/cave-expedition`, `verification/PROTOCOL.md`) and a research method (`Foundation-0/aletheia`). An outside check of that team's results changed Claim 8, Claim 9, Falsifier 6 and Record C below.
+
 Status tags follow this repository's evidence rule. `verified` means a proof given here and a check in [`scripts/verify_gate_contracts.py`](../scripts/verify_gate_contracts.py), or a count over committed public output files with its command shown.
 `source claim` means measured or published elsewhere and not reproduced in this repository. `hypothesis` means a proposed rule with a test and a stated observation that would count against it. The hub contributing guide calls that third tag `proposed`.
 Numbered claims are stated and tagged here. Lettered records are measurements made in other repositories, each tagged `source claim`.
@@ -238,10 +240,25 @@ One detailed answer exposed the sample. That each answer from held-out data can 
 "Detailed verifier feedback speeds repair" and "a holdout may leak at most one bit" are about different classes. The first is about exact oracles, where Claim 5 holds. The second is about sampled oracles, where Claim 7 holds. A loop that mixes them needs the class on every receipt, which is Contract 2.
 
 **Claim 8 (`hypothesis`).** Telling a proposer the signed exact amount by which each constraint failed lets it repair in fewer rounds than telling it only which constraint failed and where.
-A preregistered design with four feedback arms, fixed seeds and a paired test is open as a record. This document reports no result from it.
+A preregistered design with four feedback arms, fixed seeds and a paired test is open as a record.
+The first registered run exists (`Moissanite-Labs/weft-loom` draft pull request 38). For the one model run so far, a mid-size model on one machine, the registered rule gives "not decided".
+On the smaller tier the signed amount solved 7 instances that the constraint-and-place arm did not and lost 13 (sign test p 0.942), which is against the claim. On the larger tier there were 7 such instances in all and the rule needs 10, so it cannot test the claim.
+The logs showed a side channel that the plan did not foresee: replies that reason in the open where the answer lines belong. On the smaller tier there were 117 such replies, and 113 of the 198 passes after round 1 came straight after one. So the arm totals mix repair from the feedback with how often the feedback led the model to think in the open. The claim stays a hypothesis.
 
 **Claim 9 (`hypothesis`).** The anchor rule is a routing rule: when an exact check passes and an anchor fails, stop adapting the proposer and revise the specification. Section 6 gives the reason for the first half. An anchor fed back to the proposer becomes one more direction the proposer can absorb.
-The second half, that revising the specification then helps, is not shown here.
+As a claim about real loops it stays a hypothesis. In the linear model of Section 6.1 it has the exact status below.
+
+**Status in the linear model (`verified`).** Let `a` be a failed anchor, so it reads `e = a . r*`, and let `P a`, its part in the column space, be not zero. To absorb `a` is to change the output inside the column space as little as possible so that `a` reads zero. That gives `r_adapt = r* - (e / |P a|^2) P a`. The script checks each statement below on fresh exact rational instances with logged seeds, rank-deficient `Phi` included.
+
+- **Cost.** `|r_adapt|^2 = |r*|^2 + e^2 / |P a|^2`. This is the textbook restricted least squares formula for one restriction (`source claim`: Greene, Econometric Analysis, restricted least squares). Any other change inside the column space that silences `a` costs more.
+- **A fresh anchor.** Take `b` with `e_b = b . r*` not zero. After absorbing, `b` reads `e_b (1 - x)`, where `x = e (P a . b) / (e_b |P a|^2)`. So absorbing helps on `b` exactly when `0 < x < 2`. It hurts when `x < 0` or `x > 2`. At `x = 0` and `x = 2` the size of the reading is unchanged.
+- **Several anchors.** Let the anchors be the columns of `A`, let `e = A^T r*`, and let `A^T P A` be invertible. Silencing all of them costs `e^T (A^T P A)^-1 e`.
+- **Revising.** Adding a direction to the specification never raises the total residual in the noiseless model. The new total is `|r*|^2` minus the squared part of `r*` inside the span of the new directions after `I - P` is applied to them. A revision whose span contains `r*` makes every anchor read zero.
+
+**What stays open.** Two forms of "revising then helps" are not shown, and each has an exact counterexample. Per anchor: take five residuals, `Phi` on the first two coordinates, and an outside residual of 5 in the third. Adding the direction (0, 0, 3/5, 4/5, 0) lowers the total from 25 to 16 and raises the squared reading of the fresh anchor (0, 0, 1, -1, 0) from 25 to 784/25.
+With noise: take `Phi` = (1, 1, 0, 0) as one column, truth (0, 0, 2, 0) and noise (1/3, -1/2, 1/5, 3/4). Adding the wrong direction (0, 0, 0, 1) lowers the squared residual on the data from 20699/3600 to 9337/1800 and raises the squared error against the truth from 289/72 to 659/144.
+
+The cost, the reading `e_b (1 - x)` and the noiseless total-residual statement come from the two-loop study in `Foundation-0/continuum` draft pull request 3. Our second-pass check of it added the restricted least squares name, the exact ties at 0 and 2 (the draft says the anchor hurts there), the several-anchor formula and the two counterexamples.
 
 ## 6. Contract 4: When a Gate Is Judged
 
@@ -283,14 +300,19 @@ With `Phi` known, the squared sine `|(I - P) w|^2 / |w|^2` is computed from `w` 
 ### 6.2 Evidence
 
 The script works in exact rational arithmetic. It checks parts (a), (b) and (d), and the general reading in (c), on 200 full-rank and 100 rank-deficient instances. It checks the squared sine on 100 more, the weighted form on 100, the stationary-point form on 60 and the gradient steps on 60.
+The statements of Claim 9 and Falsifier 6 have their own checks. On 150 instances (96 with rank-deficient `Phi`, seed 20261121) they cover the cost, the outside part, the old falsifier and the `0 < x < 2` rule with both ties. They then cover several anchors on 100 instances (seed 20261122) and revisions on 100 (seed 20261123).
+The old falsifier fires on 136 of the 150, and in each of those the outside part is unchanged and the total residual rose. Each check has a must-fail control that runs it on a corrupted input.
 
 **Record C (`source claim`).** Recorded in the hub plan (`siliconcordat/.github` issue 5) and not reproduced here: a first run held on 1,500 exact rational instances. The same statement was then demonstrated on a table of 14 binned points committed in `Foundation-0/gravity` at commit 8f96c4b2.
 The hub plan states both results in words. The figures below come from the runs themselves, which are not published.
 A line was fitted with the table's own weights, and families of rank 1 to 4 were then absorbed by exact least squares. Each audit matched to a family member read exactly zero from the rank where that member entered, and was nonzero before. A probe outside every family kept a nonzero reading: 0.277 before, then 0.0402, 0.0302, 0.0170 and 0.0037.
 
-Limits of that demonstration. It shows a statement about the audit and nothing about the physics in that repository. Its test of outside anchors is weak.
+Limits of that demonstration. It shows a statement about the audit and nothing about the physics in that repository. Its first test of outside anchors was weak, and a stronger one follows below.
 Tuning one parameter lowered the fitted table's misfit, a weighted sum of squared residuals, from 30.486 to 25.89. Of the two outside checks that the repository ties to that parameter, one moved from 0.634 to 0.751. It had three degrees of freedom and was already near its floor, so "the outside check did not improve" carries little weight for it.
-The other improved from 7.876 to 5.393, and by the module's own description it shares its sample with the fitted table, so it is not independent. The demonstration does not show that adaptation harms outside anchors.
+The other improved from 7.876 to 5.393, and by the module's own description it shares its sample with the fitted table, so it is not independent. These two anchors do not show that adaptation harms outside anchors.
+
+A sample-disjoint anchor exists in the same repository: the KiDS-1000 lensing table at 1 Mpc (`KIDS_WL_ALL_1000KPC`, 4 points), predicted from the same relation. The probe in `Foundation-0/gravity` draft pull request 30 reported it, and an outside check reproduced it. It was reproduced again for this document at commit 8f96c4b2 with the command in Section 11. With `d_s` fixed at 1 its chi-squared is 31.5.
+At the adapted `d_s` of 0.945 it is 69.9, while the fitted table's misfit falls from 30.49 to 25.89. The acceleration scale `a0` is refitted at each `d_s`, and moves from 1.18e-10 to 1.25e-10. The anchor already misfits at `d_s` of 1, so this shows that adaptation moved the fit away from a sample-disjoint anchor. It does not show that `d_s` of 1 is right.
 
 ### 6.3 A Correction on Early Warning
 
@@ -424,7 +446,7 @@ Each issue or pull request is named once in this document. The matrix names the 
 | 1, clause 4 | `aska-physical/fibral-rigidity` | Checks that raise, in place of bare asserts. A bound recorded in the certificate. | the fix measured in the matrix |
 | 1, clause 4 | `aska-physical/cfrp-masts` | The same change for its five bare asserts, so that a certificate written under `python3 -O` cannot record a claim the plain run rejects. | issue 3 there |
 | 2 | `Proven-Commons/mcproof`, then L4 | Record the oracle gap per family in every repair-loop receipt. Do not stop a loop on an oracle whose recorded gap is above a registered threshold. | issue 12 there |
-| 3 | `Moissanite-Labs/weft-loom`, then L4 | Run the preregistered comparison of feedback detail. Write the oracle class into the receipt format. | draft pull request 38 |
+| 3 | `Moissanite-Labs/weft-loom`, then L4 | Preregister a comparison in which every arm has the same room to think, since the first registered run did not decide. Write the oracle class into the receipt format. | draft pull request 38 |
 | 4 | L1 `siliconcordat/loom`, L4 | Bind each audit verdict to the digest of the state before adaptation. Report the squared sine of each audit against the adjustable directions. | none yet |
 | Section 7 | `ahrazzle/soko` | Replay every shipped bound on every catalogued route in CI. Expose per-state values from the native engine so they can be replayed too. | issue 71, with draft pull request 72 |
 | Section 7 | `ahrazzle/soko` | Give the operator-counting bound a stated result for a state that can no longer be won, in place of an error about a matrix. | issue 76 |
@@ -438,9 +460,13 @@ Claims 1, 5, 10, 11, 12 and 13 are theorems and cannot be refuted by an observat
 1. **Harmless violations dominate (Contract 1).** Of the violations the harness reports on real gates for R1, for R2 on required evidence, and for R3 on rejected inputs, fewer than half are confirmed as defects by the gate's owner once the reproducer is read. Then the relations mostly flag intended behaviour.
 2. **The gap does not cost (Contract 2).** With early stopping switched off for the two families whose recorded gap is high, grader passes at the last turn do not rise. Then a false stop was not what the loop lost, and recording the gap earns no routing rule.
 3. **Detail does not speed repair (Contract 3).** In the preregistered experiment, the arm that returns signed exact amounts does not repair in fewer rounds than the arm that returns only the failed constraint and its place, by the paired test registered there. Claim 5 still holds. Claim 8 is then dropped.
+   The first registered run does not decide this. For its one model the rule gave "not decided", and its arms differed in how often replies reasoned in the open as well as in the feedback text. A run counts only if every arm has the same room to think. That is a new design and needs its own preregistration.
 4. **A mislabelled class (Contracts 2 and 3).** A loop fed full detail from a gate recorded as exact outputs an accepted artifact that the specification's owner shows to be false. Then the classes cannot be assigned reliably in practice, whatever the theorem says.
 5. **The latch does not bite (Contract 4).** In a real adaptive loop, an audit whose squared sine against the adjustable directions is below 0.05 keeps a reading after adaptation that tracks an independently measured gap. Then the loop is far from linear or far from a stationary point, and Claim 10 does not describe it.
-6. **Feeding the anchor back works (Claim 9).** A proposer adapted on an anchor's failures also passes fresh anchors of the same kind, drawn after adaptation and never shown to it. Then absorbing the anchor closed the real gap, and the routing rule costs progress.
+6. **Feeding the anchor back works (Claim 9).** A proposer adapted on an anchor's failures is judged on fresh anchors of the same kind, drawn after adaptation and never shown to it. Each fresh anchor `b` is counted by its outside part, `((I - P) b) . r`, as Contract 4 (c) says. If that count falls after absorbing, the gap outside the adjustable directions closed, and the routing rule costs progress.
+   A raw reading that falls is not enough. In the linear model absorbing leaves every outside count exactly unchanged.
+   An earlier wording said that fresh anchors passing after adaptation meant that absorbing had closed the real gap. That inference is false in the linear model of Section 6.1. Absorbing a failed anchor by the least change moves the residual only inside the column space, so the outside part is exactly unchanged. Fresh anchors that resemble the absorbed one still read smaller.
+   The script shows this on 136 of 150 instances. The defect was found through the two-loop study in `Foundation-0/continuum` draft pull request 3 and our second-pass check of it.
 7. **Replay has no power (Section 7).** An invalid bound is found in a shipped checker and no catalogued route visits a state that shows it. Then route replay is too weak a test for that bound, and closure has to be argued from the rules.
 8. **A defect outside the reading (Claim 14).** A gate defect is found in the stack that is neither a fork nor a missing step under any quotient its owner would name. Then the closure reading is dropped.
 
@@ -456,6 +482,7 @@ No statement in this document is claimed as new. The parts are known under these
 - Signing only what was measured: measured boot and remote attestation (Trusted Computing Group), and build provenance written by the build platform and not by its tenant (SLSA).
 - No floats inside hashed JSON: the JSON Canonicalization Scheme, RFC 8785, pins one number format, and the Matrix specification forbids floats in canonical JSON.
 - Residuals orthogonal to the regressors, and tests for misspecification built from them: least squares, and the specification tests of Ramsey (1969).
+- The cost of one linear restriction on a least-squares fit: restricted least squares, in econometrics texts such as Greene, Econometric Analysis.
 - Reuse of held-out data: adaptive data analysis (Dwork, Feldman, Hardt, Pitassi, Reingold and Roth, 2015).
 - Quotients of a chain that keep the dynamics: lumpability (Kemeny and Snell, 1960).
 
@@ -474,6 +501,7 @@ Limits.
 - The snapshot is one day, eighteen rows, and adapters that are not published. Sampled cells show what was run and no more.
 - The oracle gap is counted on 48 validation items per arm, against one grader. A grader can be wrong too.
 - Claim 5 is about soundness. It says nothing about speed, and nothing about whether the specification is the right one.
+- The exact status of Claim 9 is for the noiseless linear model. With noise, or for the reading of one anchor, revising the specification can raise the error. Claim 9 as a rule for real loops is untested.
 - Claim 10 is exact for a residual that is linear in the adjustable parameters and for a least-squares minimiser. For other losses only the stationary-point remark is offered.
 - Claims 12 and 13 are for finite systems given by one or more step maps, with unit step cost. Part (b) of Claim 12 is about a checker that evaluates the step as a black box.
 - The harness reads JSON artifacts and Python interpreter flags. It assumes a rejected fixture is rejected for its content. A fixture rejected only because a value has the wrong type can be reported as a re-spelling that passes. The reproducer shows the pair.
@@ -490,7 +518,7 @@ python3 -B scripts/verify_gate_contracts.py --report
 Last lines of the first command. The second prints the same apart from the time.
 
 ```text
-Ran 22 tests in 5.400s
+Ran 26 tests in 9.500s
 
 OK
 ```
@@ -510,6 +538,8 @@ Contract 1, toy gates: {'leaky': {'R1': 5, 'R2': 9, 'R3': 11, 'R4': 2, 'R5': 2},
   harness sabotages that must go red: 32
 Contract 4, latch census: {'full_rank': 200, 'rank_deficient': 100, 'boundary': 100, 'boundary_strictly_between_0_and_1': 100, 'weighted': 100}
   stationary-point instances: 60  gradient-descent instances: 60
+Claim 9, one anchor absorbed (seed 20261121): {'instances': 150, 'rank_deficient': 96, 'old_falsifier_fired': 136, 'classes': {'helps': 366, 'hurts': 683, 'tie_at_0': 150, 'tie_at_2': 150}}
+  several anchors (seed 20261122): 100  revisions (seed 20261123): 100
 Contract 3, exact gate under feedback: loops run 472392  loops that ended in an accept 266328  false accepts 0
   unsound gates exploited without feedback: 37
   sampled oracle, (samples, committed false passes, false passes after one detailed answer): (20, 1, 20)
@@ -546,3 +576,38 @@ validation_repair_p2b.json [(('A', False, False), 12), (('B', False, False), 8),
 ```
 
 A triple reads family, oracle pass, grader pass. The first file is the bare model and the second is the adapter.
+
+The added anchor of Record C, from a clone of `Foundation-0/gravity` at commit 8f96c4b2. Save the script below as `kids_check.py`, outside the clone, and run:
+
+```bash
+git clone https://github.com/Foundation-0/gravity.git
+git -C gravity checkout 8f96c4b2
+python3 -I -B kids_check.py gravity
+```
+
+```python
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import wave3_empirical_audit as w
+def sparc(ds, a0):
+    return sum(((lo - w.pred_log10_gobs(lb, ds, a0)) / (sd / math.sqrt(n))) ** 2
+               for lb, lo, sd, n in w.SPARC_RAR_BINS)
+def kids(ds, a0):
+    r, c = 1000.0 * w.KPC, 0.0
+    for lm, v, e in w.KIDS_WL_ALL_1000KPC:
+        gb = w.G * 10 ** lm * w.M_SUN / r ** 2
+        vp = math.sqrt(10 ** w.pred_log10_gobs(math.log10(gb), ds, a0) * r) / 1e3
+        c += ((v - vp) / e) ** 2
+    return c
+free = min((sparc(d / 1000, a * 1e-12), d / 1000, a * 1e-12) for d in range(800, 1101, 5) for a in range(80, 161))
+fixed = min((sparc(1.0, a * 1e-12), 1.0, a * 1e-12) for a in range(80, 161))
+for tag, (c, ds, a0) in (("d_s fixed at 1", fixed), ("d_s free", free)):
+    print(tag, "d_s", ds, "a0", a0, "sparc", round(c, 2), "kids", round(kids(ds, a0), 1))
+```
+
+```text
+d_s fixed at 1 d_s 1.0 a0 1.18e-10 sparc 30.49 kids 31.5
+d_s free d_s 0.945 a0 1.25e-10 sparc 25.89 kids 69.9
+```
+
+The script fits `d_s` and `a0` to the 14 binned points of the table with the table's own weights, over `d_s` from 0.8 to 1.1 in steps of 0.005 and `a0` from 0.8e-10 to 1.6e-10 in steps of 1e-12. It then reads the chi-squared of the 4 lensing points at the fitted values.
