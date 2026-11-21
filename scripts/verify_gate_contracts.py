@@ -695,6 +695,342 @@ class TestLatch(unittest.TestCase):
 
 
 # ======================================================================================
+# Part 2b. Contract 4: absorbing a failed anchor, and revising the specification (Claim 9)
+# ======================================================================================
+SEED_ABSORB = 20261121
+SEED_SEVERAL = 20261122
+SEED_REVISE = 20261123
+
+
+def project(Phi, v):
+    """The orthogonal projection of v on the column space of Phi, exact."""
+    return sub(v, outside_part(v, Phi))
+
+
+def hstack(A, B):
+    return [list(r) + list(s) for r, s in zip(A, B)]
+
+
+def absorb_one(Phi, r_star, a):
+    """The least change to the output, inside the column space, that makes the anchor a read zero."""
+    p = project(Phi, a)
+    pp = dot(p, p)
+    e = dot(a, r_star)
+    require(pp != 0, "the anchor has no part in the column space, so no adaptation can silence it")
+    return sub(r_star, scale(e / pp, p)), e, p, pp
+
+
+def inflation_law(e, pp):
+    return e * e / pp
+
+
+def check_inflation(Phi, r0, a, law=None):
+    """Absorbing one anchor: it reads zero, and the squared residual rises by exactly e^2 / |P a|^2."""
+    law = law or inflation_law
+    r_star = outside_part(r0, Phi)
+    r_ad, e, p, pp = absorb_one(Phi, r_star, a)
+    require(dot(a, r_ad) == 0, "the absorbed anchor does not read zero")
+    require(dot(r_ad, r_ad) == dot(r_star, r_star) + law(e, pp), "the cost of absorbing differs from the law")
+    return r_star, r_ad
+
+
+def check_silencing(Phi, r0, a, delta, law=None):
+    """Any change delta that is an adaptation (inside the column space) and silences a costs at least the law.
+    The least change meets it with equality."""
+    law = law or inflation_law
+    r_star = outside_part(r0, Phi)
+    r_ad, e, p, pp = absorb_one(Phi, r_star, a)
+    require(all(x == 0 for x in outside_part(delta, Phi)), "the change is not inside the column space")
+    shifted = sub(r_star, delta)
+    require(dot(a, shifted) == 0, "the change does not silence the anchor")
+    cost = dot(shifted, shifted) - dot(r_star, r_star)
+    require(cost >= law(e, pp), "a change that silences the anchor costs less than the law")
+    if delta == scale(e / pp, p):
+        require(cost == law(e, pp), "the least change does not meet the law with equality")
+
+
+def check_outside_unchanged(Phi, r_before, r_after, fresh):
+    """Absorption leaves the part of the residual outside the column space exactly unchanged. So the outside
+    count of every fresh anchor b, ((I - P) b) . r, is the same before and after."""
+    require(outside_part(r_after, Phi) == outside_part(r_before, Phi), "the outside part of the residual moved")
+    for b in fresh:
+        ob = outside_part(b, Phi)
+        require(dot(ob, r_after) == dot(ob, r_before), "an outside count moved")
+        require(dot(ob, r_before) == dot(b, r_before), "the outside count is not the reading before absorbing")
+
+
+def old_falsifier_fires(r_before, r_after, fresh):
+    """The wording that Falsifier 6 had: fresh anchors drawn after adaptation read smaller, taken over all of
+    them, so absorbing is read as closing the gap."""
+    before = sum(dot(b, r_before) ** 2 for b in fresh)
+    after = sum(dot(b, r_after) ** 2 for b in fresh)
+    return after < before
+
+
+def check_old_falsifier_misfires(Phi, r_before, r_after, fresh):
+    """The old falsifier fires, while the outside part is unchanged and the total residual did not fall."""
+    require(old_falsifier_fires(r_before, r_after, fresh), "the old falsifier did not fire")
+    check_outside_unchanged(Phi, r_before, r_after, fresh)
+    require(dot(r_after, r_after) >= dot(r_before, r_before), "the total residual fell")
+
+
+def helps_rule(x):
+    if 0 < x < 2:
+        return "helps"
+    if x in (0, 2):
+        return "tie"
+    return "hurts"
+
+
+def check_helps_rule(Phi, r0, a, b, rule=helps_rule, reading=lambda e_b, x: e_b * (1 - x)):
+    """On a fresh anchor b the reading becomes e_b (1 - x) with x = e (P a . b) / (e_b |P a|^2), and its size
+    falls, stays or rises as the rule says."""
+    r_star = outside_part(r0, Phi)
+    r_ad, e, p, pp = absorb_one(Phi, r_star, a)
+    e_b = dot(b, r_star)
+    require(e_b != 0, "the fresh anchor reads zero before absorbing, so x is not defined")
+    x = e * dot(p, b) / (e_b * pp)
+    after = dot(b, r_ad)
+    require(after == reading(e_b, x), "the reading after absorbing is not e_b (1 - x)")
+    actual = "helps" if abs(after) < abs(e_b) else ("tie" if abs(after) == abs(e_b) else "hurts")
+    require(actual == rule(x), f"x = {x}: the reading {actual}, the rule says {rule(x)}")
+    return x, actual
+
+
+def check_several_anchors(Phi, r0, anchors, form=None):
+    """Several anchors at once: all read zero, and the squared residual rises by e^T (A^T P A)^-1 e."""
+    r_star = outside_part(r0, Phi)
+    P_anchors = [project(Phi, a) for a in anchors]
+    M = [[dot(a, pa) for pa in P_anchors] for a in anchors]
+    e = [dot(a, r_star) for a in anchors]
+    if form is None:
+        form = lambda M_, e_: dot(e_, solve(M_, e_))
+    s = solve(M, e)
+    shift = [sum(c * pa[i] for c, pa in zip(s, P_anchors)) for i in range(len(r_star))]
+    r_ad = sub(r_star, shift)
+    require(all(dot(a, r_ad) == 0 for a in anchors), "an absorbed anchor does not read zero")
+    require(dot(r_ad, r_ad) == dot(r_star, r_star) + form(M, e), "the cost of absorbing several anchors differs from the formula")
+
+
+def random_case(rng, anchor_count=1):
+    """A random exact instance: Phi of rank 1 to 3 with 1 to 4 columns, a residual, and anchors that see Phi."""
+    for _ in range(1000):
+        m = rng.randint(5, 8)
+        rk = rng.randint(1, 3)
+        k = rng.randint(rk, 4)
+        Phi = instance(rng, m, k, rk)
+        r0 = rvec(rng, m)
+        r_star = outside_part(r0, Phi)
+        anchors = [rvec(rng, m) for _ in range(anchor_count)]
+        if all(dot(a, r_star) != 0 and any(project(Phi, a)) for a in anchors):
+            return Phi, r0, r_star, anchors
+    raise CheckFailed("no instance with anchors that see the column space in 1000 draws")
+
+
+def run_absorption_census(seed=SEED_ABSORB, count=150):
+    rng = random.Random(seed)
+    out = {"instances": 0, "rank_deficient": 0, "old_falsifier_fired": 0, "classes": {"helps": 0, "hurts": 0, "tie_at_0": 0, "tie_at_2": 0}}
+    while out["instances"] < count:
+        Phi, r0, r_star, (a,) = random_case(rng)
+        _, r_ad = check_inflation(Phi, r0, a)
+        p = project(Phi, a)
+        pp = dot(p, p)
+        e = dot(a, r_star)
+        # Any other way of silencing the anchor inside the column space costs at least as much.
+        u = rvec(rng, len(Phi[0]))
+        phi_u = mv(Phi, u)
+        if dot(a, phi_u) != 0:
+            check_silencing(Phi, r0, a, scale(e / dot(a, phi_u), phi_u))
+        check_silencing(Phi, r0, a, scale(e / pp, p))
+        # Fresh anchors of the same kind, and unrelated ones.
+        same = [[ai + F(rng.randint(-1, 1), 4) for ai in a] for _ in range(12)]
+        fresh = same + [rvec(rng, len(a)) for _ in range(6)]
+        check_outside_unchanged(Phi, r_star, r_ad, fresh)
+        if old_falsifier_fires(r_star, r_ad, same):
+            check_old_falsifier_misfires(Phi, r_star, r_ad, same)
+            out["old_falsifier_fired"] += 1
+        # The rule 0 < x < 2, on random anchors and on anchors built to sit at the two ties.
+        b0 = rvec(rng, len(a))
+        e_b = dot(b0, r_star)
+        for b in fresh[12:] + [b0]:
+            if dot(b, r_star) != 0:
+                x, actual = check_helps_rule(Phi, r0, a, b)
+                if actual != "tie":
+                    out["classes"][actual] += 1
+        if e_b != 0:
+            tie0 = sub(b0, scale(dot(p, b0) / pp, p))
+            tie2 = add(b0, scale(2 * e_b / e - dot(p, b0) / pp, p))
+            require(check_helps_rule(Phi, r0, a, tie0) == (0, "tie"), "the anchor built for x = 0 is not a tie")
+            require(check_helps_rule(Phi, r0, a, tie2) == (2, "tie"), "the anchor built for x = 2 is not a tie")
+            out["classes"]["tie_at_0"] += 1
+            out["classes"]["tie_at_2"] += 1
+        out["instances"] += 1
+        out["rank_deficient"] += rank(Phi) < len(Phi[0])
+    require(out["old_falsifier_fired"] * 2 >= out["instances"], "the old falsifier fires on fewer than half of the instances")
+    require(all(v > 0 for v in out["classes"].values()), "a class of the rule was never met")
+    return out
+
+
+def run_several_census(seed=SEED_SEVERAL, count=100):
+    rng = random.Random(seed)
+    done = 0
+    while done < count:
+        q = rng.randint(2, 3)
+        Phi, r0, r_star, anchors = random_case(rng, q)
+        P_anchors = [project(Phi, a) for a in anchors]
+        M = [[dot(a, pa) for pa in P_anchors] for a in anchors]
+        if rank(M) < q:
+            continue
+        check_several_anchors(Phi, r0, anchors)
+        done += 1
+    return done
+
+
+def check_revision(Phi, Psi, r0, claimed_total=None):
+    """Adding the columns Psi to the specification never raises the total residual (noiseless model), and
+    the total is |r*|^2 minus the squared part of r* inside the span of the new columns' outside parts."""
+    r_star = outside_part(r0, Phi)
+    r_rev = outside_part(r0, hstack(Phi, Psi))
+    require(dot(r_rev, r_rev) <= dot(r_star, r_star), "adding a direction raised the total residual")
+    new_dirs = tr([outside_part(c, Phi) for c in tr(Psi)])
+    require(r_rev == outside_part(r_star, new_dirs), "the revised residual is not r* minus its part inside the new directions")
+    inside = sub(r_star, r_rev)
+    expected = dot(r_star, r_star) - dot(inside, inside)
+    total = dot(r_rev, r_rev) if claimed_total is None else claimed_total
+    require(expected == total, "the total after revising differs from |r*|^2 minus the squared part inside the new directions")
+    return r_rev
+
+
+def check_revision_zeroes(Phi, Psi, r0, anchors):
+    """A revision whose span contains the outside residual zeroes every anchor."""
+    r_rev = outside_part(r0, hstack(Phi, Psi))
+    require(all(dot(b, r_rev) == 0 for b in anchors), "an anchor still reads nonzero after the revision")
+
+
+def run_revision_census(seed=SEED_REVISE, count=100):
+    rng = random.Random(seed)
+    done = 0
+    while done < count:
+        Phi, r0, r_star, (a,) = random_case(rng)
+        m = len(r0)
+        width = rng.randint(1, 2)
+        Psi = [[rnd(rng) for _ in range(width)] for _ in range(m)]
+        r_rev = check_revision(Phi, Psi, r0)
+        r_ad = absorb_one(Phi, r_star, a)[0]
+        require(dot(r_rev, r_rev) <= dot(r_star, r_star) < dot(r_ad, r_ad), "a revision ended above the absorbed residual")
+        containing = [[x] for x in r_star]
+        check_revision_zeroes(Phi, containing, r0, [rvec(rng, m) for _ in range(5)] + [a])
+        done += 1
+    return done
+
+
+def check_per_anchor_counterexample(v):
+    """Five residuals, Phi on the first two coordinates, outside residual 5 in the third. Adding the direction v
+    lowers the total from 25 to 16 and raises the reading of the fresh anchor (0, 0, 1, -1, 0)."""
+    Phi = [[F(int(i == j)) for j in range(2)] for i in range(5)]
+    r0 = [F(0), F(0), F(5), F(0), F(0)]
+    fresh = [F(0), F(0), F(1), F(-1), F(0)]
+    r_rev = check_revision(Phi, [[x] for x in v], r0)
+    before, after = dot(fresh, r0) ** 2, dot(fresh, r_rev) ** 2
+    require(after > before, "the revision does not raise the reading of the fresh anchor")
+    return dot(r_rev, r_rev), before, after
+
+
+def check_noisy_counterexample(direction):
+    """A noisy residual. Adding a wrong direction lowers the residual on the data and raises the error against the truth."""
+    Phi = [[F(1)], [F(1)], [F(0)], [F(0)]]
+    truth = [F(0), F(0), F(2), F(0)]
+    noise = [F(1, 3), F(-1, 2), F(1, 5), F(3, 4)]
+    y = add(truth, noise)
+    wider = hstack(Phi, [[x] for x in direction])
+    res1, res2 = outside_part(y, Phi), outside_part(y, wider)
+    err1, err2 = sub(truth, project(Phi, y)), sub(truth, project(wider, y))
+    require(dot(res2, res2) < dot(res1, res1), "the residual on the data did not fall")
+    require(dot(err2, err2) > dot(err1, err1), "the error against the truth did not rise")
+    return (dot(res1, res1), dot(res2, res2)), (dot(err1, err1), dot(err2, err2))
+
+
+class TestAnchorAbsorption(unittest.TestCase):
+    """docs/09 Claim 9 and Falsifier 6: what absorbing a failed anchor does in the linear model of section 6.1."""
+
+    def test_doc09_c9_cost_outside_part_old_falsifier_and_the_x_rule(self):
+        census = run_absorption_census()
+        self.assertEqual(census["instances"], 150)
+        self.assertGreater(census["rank_deficient"], 0)
+
+    def test_doc09_c9_several_anchors_and_revision(self):
+        self.assertEqual(run_several_census(), 100)
+        self.assertEqual(run_revision_census(), 100)
+
+    def test_doc09_c9_exact_counterexamples_of_the_open_forms(self):
+        third = F(3, 5), F(4, 5)
+        total, before, after = check_per_anchor_counterexample([F(0), F(0), third[0], third[1], F(0)])
+        self.assertEqual((total, before, after), (F(16), F(25), F(784, 25)))
+        data, truth = check_noisy_counterexample([F(0), F(0), F(0), F(1)])
+        self.assertEqual(data, (F(20699, 3600), F(9337, 1800)))
+        self.assertEqual(truth, (F(289, 72), F(659, 144)))
+
+    def test_doc09_c9_absorption_checks_go_red(self):
+        Phi = [[F(1), F(0)], [F(0), F(1)], [F(0), F(0)], [F(0), F(0)], [F(0), F(0)]]
+        r0 = [F(2), F(-1), F(3), F(1), F(-2)]
+        a = [F(1), F(1), F(1), F(0), F(0)]
+        r_star, r_ad = check_inflation(Phi, r0, a)                                          # control
+        self.assertTrue(goes_red(check_inflation, Phi, r0, a, lambda e, pp: e * e / (2 * pp)))
+        self.assertTrue(goes_red(check_inflation, Phi, r0, a, lambda e, pp: e * e))
+        # Silencing: the least change meets the law, a worse change passes, a cheaper claim fails.
+        p = project(Phi, a)
+        pp, e = dot(p, p), dot(a, r_star)
+        check_silencing(Phi, r0, a, scale(e / pp, p))                                       # control
+        check_silencing(Phi, r0, a, scale(e / dot(a, [F(1), F(0), F(0), F(0), F(0)]), [F(1), F(0), F(0), F(0), F(0)]))
+        self.assertTrue(goes_red(check_silencing, Phi, r0, a, scale(e / pp, p), lambda e_, pp_: 2 * e_ * e_ / pp_))
+        self.assertTrue(goes_red(check_silencing, Phi, r0, a, scale(e / dot(a, a), a)))     # outside the column space
+        self.assertTrue(goes_red(check_silencing, Phi, r0, a, [F(0)] * 5))                  # silences nothing
+        # A change that is not an adaptation moves the outside part, so the check of the outside part goes red.
+        moved = sub(r_star, scale(e / dot(a, a), a))
+        fresh = [[F(1), F(0), F(1), F(0), F(0)], [F(0), F(0), F(2), F(1), F(0)]]
+        check_outside_unchanged(Phi, r_star, r_ad, fresh)                                   # control
+        self.assertTrue(goes_red(check_outside_unchanged, Phi, r_star, moved, fresh))
+        # The old falsifier fires on an absorption that closed nothing. It does not fire when nothing moved,
+        # and the misfire check refuses an absorption that did change the outside part.
+        same = [[F(1), F(1), F(1), F(0), F(0)], [F(1), F(1), F(3, 4), F(0), F(0)], [F(5, 4), F(1), F(1), F(0), F(0)]]
+        check_old_falsifier_misfires(Phi, r_star, r_ad, same)                               # control
+        self.assertTrue(old_falsifier_fires(r_star, moved, same))                          # so the next control fails on the outside part
+        self.assertTrue(goes_red(check_old_falsifier_misfires, Phi, r_star, r_star, same))
+        self.assertTrue(goes_red(check_old_falsifier_misfires, Phi, r_star, moved, same))
+        # The x rule: the old label at the ties and a wrong upper bound both go red.
+        b_help = [F(1), F(0), F(2), F(0), F(0)]
+        tie0 = sub(b_help, scale(dot(p, b_help) / pp, p))
+        check_helps_rule(Phi, r0, a, b_help)                                                # control
+        self.assertEqual(check_helps_rule(Phi, r0, a, tie0), (0, "tie"))
+        old_rule = lambda x: "hurts" if x <= 0 or x >= 2 else "helps"
+        self.assertTrue(goes_red(check_helps_rule, Phi, r0, a, tie0, old_rule))
+        b_mid = [F(2), F(1), F(1), F(0), F(0)]                                             # x = 3/2
+        self.assertEqual(check_helps_rule(Phi, r0, a, b_mid), (F(3, 2), "helps"))
+        self.assertTrue(goes_red(check_helps_rule, Phi, r0, a, b_mid, lambda x: "helps" if 0 < x < 1 else "hurts"))
+        self.assertTrue(goes_red(check_helps_rule, Phi, r0, a, b_help, helps_rule, lambda e_b, x: e_b * (1 + x)))
+        # Several anchors.
+        two = [a, [F(0), F(1), F(0), F(1), F(1)]]
+        check_several_anchors(Phi, r0, two)                                                 # control
+        self.assertTrue(goes_red(check_several_anchors, Phi, r0, two, lambda M, e_: dot(e_, mv(M, e_))))
+        self.assertTrue(goes_red(check_several_anchors, Phi, r0, two, lambda M, e_: sum(x * x for x in e_)))
+        # Revision.
+        Psi = [[F(0)], [F(0)], [F(1)], [F(0)], [F(0)]]
+        check_revision(Phi, Psi, r0)                                                        # control
+        self.assertTrue(goes_red(check_revision, Phi, Psi, r0, F(10**6)))
+        self.assertTrue(goes_red(check_revision_zeroes, Phi, Psi, r0, [r_star]))
+        check_revision_zeroes(Phi, [[x] for x in r_star], r0, [r_star, a])                  # control
+        # The counterexamples need a direction that does the harm: a direction orthogonal to the outside residual
+        # leaves the total alone, and a direction along the truth lowers the error against the truth.
+        self.assertTrue(goes_red(check_per_anchor_counterexample, [F(0), F(0), F(0), F(1), F(0)]))
+        self.assertTrue(goes_red(check_noisy_counterexample, [F(0), F(0), F(1), F(0)]))
+        # The census catches a wrong law in the code it runs.
+        with broken("inflation_law", lambda e, pp: e * e / (2 * pp)):
+            self.assertTrue(goes_red(run_absorption_census, SEED_ABSORB, 3))
+        with broken("outside_part", lambda w, Phi_: list(w)):
+            self.assertTrue(goes_red(run_absorption_census, SEED_ABSORB, 3))
+
+
+# ======================================================================================
 # Part 3. Contract 3: what may flow back to the proposer
 # ======================================================================================
 ARTIFACTS = (0, 1, 2)
@@ -1104,6 +1440,9 @@ def print_report():
     print("Contract 4, latch census:", run_latch_census())
     print("  stationary-point instances:", run_local_latch_census(), " gradient-descent instances:", run_descent_census())
     runs, accepted = check_exact_gate_is_sound_under_feedback()
+    ab = run_absorption_census()
+    print("Claim 9, one anchor absorbed (seed %d):" % SEED_ABSORB, ab)
+    print("  several anchors (seed %d): %d  revisions (seed %d): %d" % (SEED_SEVERAL, run_several_census(), SEED_REVISE, run_revision_census()))
     print("Contract 3, exact gate under feedback: loops run", runs, " loops that ended in an accept", accepted, " false accepts 0")
     print("  unsound gates exploited without feedback:", check_unsound_gate_is_exploitable())
     print("  sampled oracle, (samples, committed false passes, false passes after one detailed answer):",
