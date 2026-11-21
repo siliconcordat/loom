@@ -450,7 +450,9 @@ The suite sums over `B` from the definition for `N` from 3 to 7 and `y` in `2`, 
 
 The nearest-neighbour description is the sum, over `B`, of the four products of cyclically adjacent neighbours. The pairs across a site, east with west and north with south, are not in it.
 
-**Witness.** Let both sides be even and at least 6. Start from all spins `+1` and flip the kept sites at `(0,0)` and `(3,3)`. Call this `a1`. Flip `(0,0)`, `(1,1)` and `(2,0)` instead and call that `a2`. The two have the same nearest-neighbour value. The flipped sites of `a1` have no summed-out neighbour in common. This needs both sides at least 6, so the neighbours of the sites do not wrap onto each other.
+**Witness.** Let both sides be even and at least 6. Start from all spins `+1` and flip the kept sites at `(0,0)` and `(3,3)`. Call this `a1`. Flip `(0,0)`, `(1,1)` and `(2,0)` instead and call that `a2`. The two have the same nearest-neighbour value.
+
+A coarse bond joins two kept sites at diagonal distance one. In `a1` eight bonds have one flipped end. In `a2` the three sites have twelve bond ends. Two bonds join two flipped sites and use four of those ends, so again eight bonds have one flipped end. The flipped sites of `a1` have no summed-out neighbour in common. This needs both sides at least 6, so the neighbours of the sites do not wrap onto each other.
 
 In `a1` eight summed-out sites have `|s| = 2`. All others have `|s| = 4`. In `a2` six sites have `|s| = 2`, two have `s = 0` and the rest have `|s| = 4`. So `W(a1) / W(a2) = (2cosh 2K)^2 / 2^2 = cosh^2(2K)`. This exceeds 1 at every `K > 0`. The description forks at every positive coupling.
 
@@ -470,11 +472,11 @@ The suite checks the identity, raised to the eighth power so that it is exact, a
 
 The hypothesis is needed. A site with three neighbours has pair coefficient `(1/4) ln(cosh 3K / cosh K)`, which is not `beta`. Open boundaries are not tested here.
 
-**Known parts (`source claim`).** The three couplings `(1/4) ln cosh 4K`, `(1/8) ln cosh 4K` and `(1/8) ln cosh 4K - (1/2) ln cosh 2K` for nearest-neighbour, across and four-spin terms on the infinite lattice are in lecture notes on decimation (Phys 727, lecture 27, University of Mississippi, 2014). They match the values above.
+**Known parts (`source claim`).** The three couplings `(1/4) ln cosh 4K`, `(1/8) ln cosh 4K` and `(1/8) ln cosh 4K - (1/2) ln cosh 2K` for nearest-neighbour, across and four-spin terms on the infinite lattice are in lecture notes on decimation (Phys 727, lecture 27, University of Mississippi, 2014). They match the values above, since each coarse bond lies next to two summed-out sites and so gets `2 beta`.
 
 A seminar text (Zielinski, University of Munich, 2009) says that once next-nearest-neighbour couplings are present, the checkerboard sum does not factorise. Only the abstract of Kushnir and Rosenstein (cond-mat/9506060) was read, on decimation in more than one dimension. The fork wording and the reading as a lumpability condition rename known structure.
 
-**The second step (`verified` on the cases shown).** After the first step the coarse spins sit on a square lattice, and each summed-out site gives one coarse face with four corners. The weight is the product over faces of `p^(P_F) q^(Q_F)`, where `P_F` and `Q_F` are `P` and `Q` of the face, `p = e^beta` and `q = e^gamma`.
+**The second step (`verified` on the cases shown).** After the first step the coarse spins sit on a square lattice, and each summed-out site gives one coarse face with four corners. Up to a constant factor, the weight is the product over faces of `p^(P_F) q^(Q_F)`, where `P_F` and `Q_F` are `P` and `Q` of the face, `p = e^beta` and `q = e^gamma`.
 
 Two coarse sites interact when they share a face. So two sites of one checkerboard colour interact across a face diagonal, and the checkerboard cannot be summed out.
 
@@ -492,7 +494,7 @@ The suite takes the 4 by 4 coarse torus: 4 summed-out sites, 12 kept spins and 4
 
 On the actual curve, with `x = e^(2K)`, the suite takes one forking pair for each of `D0` and `D1`. It encloses `p` and `q` between rational bounds `2^-64` apart and shows that the two enclosures of `W` do not meet. This holds at `x` equal to 2, 3/2, 7/5 and 5.
 
-**Observation: dropping one orbit (`verified`, an observation of small scope).** On the 4 by 4 coarse torus the 27 orbit sums close, and dropping any one orbit of degree 4 or more gives no fork. Dropping all of degrees 6 and 8 gives none either. Keeping only degrees 0 and 2 gives 108 classes of which 6 fork. The cause is a counting bound and not aliasing from the small torus.
+**Observation: dropping one orbit (`verified`, an observation of small scope).** On the 4 by 4 coarse torus the 27 orbit sums close, and dropping any one orbit of degree 4 or more gives no fork. Dropping all of degrees 6 and 8 gives none either. Keeping only degrees 0 and 2 gives 108 classes of which 6 fork. For a single dropped orbit the cause is a counting bound and not aliasing from the small torus.
 
 *Bound.* Let two configurations have histograms `h` and `h'` over `n` summed-out sites. Each sums to `n`, so `h - h'` has absolute sum at most `2n`.
 
@@ -502,9 +504,11 @@ The suite computes the 26 vectors `u_o` of degrees 2 to 8 exactly. For the least
 
 The 4 by 4 torus has `n = 4`. The bound is a necessary condition, not a witness. No bound for dropping several orbits at once is given here.
 
-**Observation: couplings where a term vanishes (`verified` as a sign change at 40 digits).** Expand `ln 2cosh(h)` of the block in the products of its eight spins. Odd products have coefficient zero. The suite computes the 27 even coefficients with 40-digit decimals on a grid of 470 values of `x`, in steps of 1/50 up to 3 and then 1/10 up to 40. None vanishes at a grid point. Four change sign. This is numerical, with no error bound.
+**Observation: couplings where a term vanishes (`verified` as a sign change at 40 digits).** Expand `ln 2cosh(h)` of the block in the products of its eight spins. Odd products have coefficient zero, because flipping all eight spins changes the sign of `h` and leaves `ln 2cosh(h)` alone.
 
-The four are the degree-6 orbit of `{E, W, NE, NW, SW, SE}` at `x` near 1.987456 and the degree-4 orbits of `{E, W, NE, NW}`, `{E, N, NW, SE}` and `{E, W, NE, SE}` at `x` near 2.062078, 3.755034 and 4.250651. At such a coupling that term can be left out of the description. Zeros closer together than one grid step would be missed, so the list is a sample. For generic `K` all 27 orbits are needed.
+The suite computes the 27 even coefficients with 40-digit decimals on a grid of 470 values of `x`, in steps of 1/50 up to 3 and then 1/10 up to 40. None vanishes at a grid point. Four change sign. This is numerical, with no error bound.
+
+The four are the degree-6 orbit of `{E, W, NE, NW, SW, SE}` at `x` near 1.987456 and the degree-4 orbits of `{E, W, NE, NW}`, `{E, N, NW, SE}` and `{E, W, NE, SE}` at `x` near 2.062078, 3.755034 and 4.250651. At such a coupling that term can be left out of the description. Zeros closer together than one grid step would be missed, so the list is a sample. A nonzero term is not shown to be needed. Whether each single orbit can show a fork on some larger lattice is not settled here.
 
 **Label.** The ring result, the one-step closure and its couplings, and the failure of the checkerboard sum with longer-range terms are known. That the nearest-neighbour description alone forks in two dimensions is the usual point that new couplings appear. The explicit witness was not looked up.
 
@@ -609,7 +613,7 @@ python3 -B scripts/verify_gate_contracts.py --report
 Last lines of the first command. The second prints the same apart from the time.
 
 ```text
-Ran 31 tests in 9.286s
+Ran 31 tests in 9.209s
 
 OK
 ```

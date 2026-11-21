@@ -1523,7 +1523,8 @@ def run_ring_census(sizes=(3, 4, 5, 6, 7), couplings=DECIM_COUPLINGS):
     out = {"sizes": sizes, "couplings": [str(y) for y in couplings], "classes": {}}
     for n in sizes:
         out["classes"][n] = check_ring_has_no_fork(n, ring_nn, ring_weight_brute, couplings)
-        check_ring_closed_form(n, couplings[0])
+        for y in couplings:
+            check_ring_closed_form(n, y)
     return out
 
 
@@ -1807,14 +1808,14 @@ def prod_of(pat, sub):
     return r
 
 
-def check_block_symmetry():
+def check_block_symmetry(exponents=block_exponents):
     """The block exponents are unchanged by the square's symmetries up to the sign that the flip gives S and T."""
     for pat in BLOCK_PATTERNS:
-        kept, s, t = block_exponents(pat)
-        flipped = block_exponents(tuple(-v for v in pat))
+        kept, s, t = exponents(pat)
+        flipped = exponents(tuple(-v for v in pat))
         require(flipped == (kept, -s, -t), "the block factor is not flip symmetric")
         for m in BLOCK_MAPS:
-            moved = block_exponents(tuple(pat[m[i]] for i in range(8)))
+            moved = exponents(tuple(pat[m[i]] for i in range(8)))
             require(moved == (kept, s, t), "the block factor is not symmetric under the square's maps")
     return len(BLOCK_PATTERNS)
 
@@ -1977,9 +1978,21 @@ def poly_interval(poly, pi, qi):
     return lo, hi
 
 
-def check_fork_on_curve(poly1, poly2, x):
+def check_curve_enclosure(x, pi, qi):
+    """The intervals hold p and q of the K curve, tested by another route: cosh 4K = 2 cosh^2 2K - 1, with
+    p^8 = cosh 4K and q^8 cosh^4 2K = cosh 4K."""
+    c2 = (x + 1 / x) / 2
+    c4 = 2 * c2 * c2 - 1
+    require(0 < pi[0] < pi[1] and 0 < qi[0] < qi[1], "an enclosure is empty or not positive")
+    require(pi[0] ** 8 <= c4 <= pi[1] ** 8, "the interval for p does not hold the curve value at x = %s" % x)
+    require(qi[0] ** 8 * c2 ** 4 <= c4 <= qi[1] ** 8 * c2 ** 4,
+            "the interval for q does not hold the curve value at x = %s" % x)
+
+
+def check_fork_on_curve(poly1, poly2, x, intervals=curve_interval):
     """The two weights are different numbers on the K curve at x: their enclosures do not meet."""
-    pi, qi = curve_interval(x)
+    pi, qi = intervals(x)
+    check_curve_enclosure(x, pi, qi)
     a, b = poly_interval(poly1, pi, qi), poly_interval(poly2, pi, qi)
     require(a[1] < b[0] or b[1] < a[0], "the enclosures of the two weights meet at x = %s" % x)
 
@@ -2169,6 +2182,7 @@ class TestDecimation(unittest.TestCase):
         census = run_zero_census()
         got = sorted((deg, round(x, 6)) for deg, _, x in census["zeros"])
         self.assertEqual(got, [(4, 2.062078), (4, 3.755034), (4, 4.250651), (6, 1.987456)])
+        self.assertEqual(census["grid_points"], 470)
         self.assertGreater(census["smallest_abs_coefficient_on_grid"], 1e-30)
 
     def test_doc09_c5_decimation_checks_go_red(self):
@@ -2201,6 +2215,11 @@ class TestDecimation(unittest.TestCase):
         self.assertTrue(goes_red(check_dual_vector, table, 26, vec[:-1] + [vec[-1] + 1]))
         w = (((0, 0), 1),)
         self.assertTrue(goes_red(check_fork_on_curve, w, w, F(2)))
+        # Intervals that are not on the K curve (p^8 = x in place of cosh 4K) are refused even for two different weights.
+        off_curve = lambda x: (root8_interval(x), root8_interval(x))
+        self.assertTrue(goes_red(check_fork_on_curve, w, (((0, 0), 2),), F(2), off_curve))
+        # Block exponents that a rotation of the square changes are refused.
+        self.assertTrue(goes_red(check_block_symmetry, lambda pat: (pat[0] * pat[1],) + block_exponents(pat)[1:]))
         # A bracket with no sign change is refused.
         reps, groups = walsh_groups()
         self.assertTrue(goes_red(locate_zero, 0, F(2), F(3), reps, groups))
