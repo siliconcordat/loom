@@ -428,6 +428,88 @@ Predicted: at least one gate written in Rust in the five layers has a `debug_ass
 It is a hit if one such site can change a verdict or wrap on a value the submitter chooses. It is a miss if no such site is found in the Rust code of the five layers. Nothing was known about that code when this was written beyond the fact that layer 5 prints floats from Rust.
 Outcome (`source claim`, read at layer-5 commit 52ce017 and not built). Only layer 5 holds Rust. Its `Cargo.toml` sets no release profile, so overflow checks are off in a release build. But the code has no `debug_assert!`. The one unchecked subtraction on integers a submitter chooses, the two ends of an edit span, sits behind an explicit range test that runs first. No site was found that can wrap.
 
+### 7.7 A Worked Case in Physics: Decimation of the Ising Model
+
+This section sets a standard procedure of statistical physics, decimation, beside the fork of Section 7.1. Only the typed correspondence below is claimed. The statements tagged `verified` have a proof here and a check in the suite. Statements tagged `source claim` are results of others.
+
+**Setting.** An Ising model puts a spin, `+1` or `-1`, on each site of a graph. A configuration has weight `exp(K * sum of s_i s_j over the edges)` with coupling `K > 0`. Write `y = e^K`.
+
+Decimation sums some sites out. Let `B` be the summed-out sites, with no edge between two of them, and `A` the kept sites. The weight `W(a)` of a configuration `a` of `A` is the sum of the weights of all configurations of `B` that extend it.
+
+**The typed correspondence.** The states are the configurations of `A`. A coarse description is a list of functions of `a`. A fork is two configurations with equal values of every function in the list and different `W`. This is the fork of Claim 12 with the step map replaced by the weight map.
+
+The description is closed when `W` takes one value on each class. Nothing else is claimed to carry over. There is no step, goal or distance in this case.
+
+**Product formula (`verified`).** Each `b` in `B` has edges only to `A`. Summing its spin gives `2cosh(K s_b)`, where `s_b` is the sum of the neighbour spins of `b`, counted with multiplicity. So `W(a)` is the product of these factors over `B`. The suite compares the product with the definition on seeded random configurations of the 4 by 4 torus.
+
+**Ring (`verified`).** Take a ring of `2N` sites with `N >= 3`, `A` the even sites and `B` the odd sites. The factor of `b` is 2 when its two neighbours differ and `2cosh(2K)` when they agree. So `W = 2^N cosh(2K)^m`, where `m` is the number of agreeing coarse bonds. The nearest-neighbour sum of the coarse spins is `2m - N`. The description is closed at every `K`.
+
+The suite sums over `B` from the definition for `N` from 3 to 7 and `y` in `2`, `3/2` and `5/3`. It finds no fork and confirms the closed form. Since `m = (N + nn) / 2`, the weight is `exp(K' * nn)` up to a constant, with `K' = (1/2) ln cosh 2K`. This is the standard one-dimensional decimation. No text was read for it here.
+
+**Square torus with the nearest-neighbour sum (`verified`).** Take an `Lx` by `Ly` torus with both sides even and at least 4. Let `A` be the sites with `i + j` even and `B` the rest. Each `b` has four distinct neighbours: east, north, west and south.
+
+The nearest-neighbour description is the sum, over `B`, of the four products of cyclically adjacent neighbours. The pairs across a site, east with west and north with south, are not in it.
+
+**Witness.** Let both sides be even and at least 6. Start from all spins `+1` and flip the kept sites at `(0,0)` and `(3,3)`. Call this `a1`. Flip `(0,0)`, `(1,1)` and `(2,0)` instead and call that `a2`. The two have the same nearest-neighbour value. The flipped sites of `a1` have no summed-out neighbour in common. This needs both sides at least 6, so the neighbours of the sites do not wrap onto each other.
+
+In `a1` eight summed-out sites have `|s| = 2`. All others have `|s| = 4`. In `a2` six sites have `|s| = 2`, two have `s = 0` and the rest have `|s| = 4`. So `W(a1) / W(a2) = (2cosh 2K)^2 / 2^2 = cosh^2(2K)`. This exceeds 1 at every `K > 0`. The description forks at every positive coupling.
+
+The suite checks equal descriptions and the exact ratio at the sizes 6 by 6, 6 by 8, 8 by 6, 8 by 8 and 10 by 10, for the three couplings above.
+
+On the 4 by 4 torus the sites wrap onto each other, so it is checked by enumeration. Of 7 classes of the description, one forks. It holds a configuration with `(n0, n2, n4) = (0, 8, 0)` and one with `(4, 4, 0)`, where `n_j` counts the summed-out sites with `|s| = j`. Their ratio is `cosh^4(2K)`.
+
+**The enlarged description closes one step (`verified`, under a stated hypothesis).** Suppose every summed-out site has four distinct neighbours, as on the tori above. Write `P` for the sum of the six pair products of the four neighbours of `b` and `Q` for their product.
+
+Then `ln 2cosh(K s_b) = alpha + beta P + gamma Q` with `beta = (1/8) ln cosh 4K`, `gamma = beta - (1/2) ln cosh 2K` and `alpha = ln 2 + beta + (1/2) ln cosh 2K`.
+
+*Proof.* The value of `|s|` is 4, 2 or 0. Then `(P, Q)` is `(6, 1)`, `(0, -1)` or `(-2, 1)`. The three values of `ln 2cosh(K s)` are `ln 2cosh 4K`, `ln 2cosh 2K` and `ln 2`. Three equations fix three unknowns. Subtracting the third from the first gives `8 beta = ln cosh 4K`, and the third from the second gives `2 beta - 2 gamma = ln cosh 2K`.
+
+So `W` depends on `a` only through the sum of `P` over `B` and the sum of `Q`. The sum of `P` is the nearest-neighbour sum plus the across-pair sum. The description with those three sums closes.
+
+The suite checks the identity, raised to the eighth power so that it is exact, at the three couplings. It then enumerates the 4 by 4 torus, where the three sums give 12 classes and no fork. With the four-spin sum removed, one class forks again.
+
+The hypothesis is needed. A site with three neighbours has pair coefficient `(1/4) ln(cosh 3K / cosh K)`, which is not `beta`. Open boundaries are not tested here.
+
+**Known parts (`source claim`).** The three couplings `(1/4) ln cosh 4K`, `(1/8) ln cosh 4K` and `(1/8) ln cosh 4K - (1/2) ln cosh 2K` for nearest-neighbour, across and four-spin terms on the infinite lattice are in lecture notes on decimation (Phys 727, lecture 27, University of Mississippi, 2014). They match the values above.
+
+A seminar text (Zielinski, University of Munich, 2009) says that once next-nearest-neighbour couplings are present, the checkerboard sum does not factorise. Only the abstract of Kushnir and Rosenstein (cond-mat/9506060) was read, on decimation in more than one dimension. The fork wording and the reading as a lumpability condition rename known structure.
+
+**The second step (`verified` on the cases shown).** After the first step the coarse spins sit on a square lattice, and each summed-out site gives one coarse face with four corners. The weight is the product over faces of `p^(P_F) q^(Q_F)`, where `P_F` and `Q_F` are `P` and `Q` of the face, `p = e^beta` and `q = e^gamma`.
+
+Two coarse sites interact when they share a face. So two sites of one checkerboard colour interact across a face diagonal, and the checkerboard cannot be summed out.
+
+The second step sums out the even-even quarter of the coarse sites. Each has eight kept neighbours, four on the axes and four on the diagonals. Its block factor is `p^k (p^S q^T + p^(-S) q^(-T))`, with integers `k`, `S` and `T` read from the eight spins. The suite checks on all 256 patterns that `k`, `S` and `T` are unchanged by the eight symmetries of the square. A global flip leaves `k` alone and changes the sign of `S` and `T`.
+
+So `W` depends on the histogram of block patterns over the 27 classes of patterns under the symmetries and the flip.
+
+The monomials of even size in the eight spins fall into 27 orbits under the symmetries. They number 1, 6, 13, 6 and 1 at degrees 0, 2, 4, 6 and 8. The sums of the 27 orbits are a linear image of the histogram. The suite finds that the 27 by 27 integer table of this map has rank 27, exactly. So the 27 orbit sums close.
+
+The suite takes the 4 by 4 coarse torus: 4 summed-out sites, 12 kept spins and 4096 configurations. It computes `W` there as a polynomial in `p` and `q`, and checks the block product against the definition at seeded configurations.
+
+`D0` is the sum of kept nearest-neighbour pairs and the sum of kept diagonal pairs. `D1` is one sum of products per displacement of a pair of kept spins, a displacement and its negative counted once.
+
+`D0` has 29 classes and 19 fork. `D1` has 268 classes and 21 fork. The 27 orbit sums have 115 classes and none fork. A fork between two different polynomials is a fork at generic `p` and `q`.
+
+On the actual curve, with `x = e^(2K)`, the suite takes one forking pair for each of `D0` and `D1`. It encloses `p` and `q` between rational bounds `2^-64` apart and shows that the two enclosures of `W` do not meet. This holds at `x` equal to 2, 3/2, 7/5 and 5.
+
+**Observation: dropping one orbit (`verified`, an observation of small scope).** On the 4 by 4 coarse torus the 27 orbit sums close, and dropping any one orbit of degree 4 or more gives no fork. Dropping all of degrees 6 and 8 gives none either. Keeping only degrees 0 and 2 gives 108 classes of which 6 fork. The cause is a counting bound and not aliasing from the small torus.
+
+*Bound.* Let two configurations have histograms `h` and `h'` over `n` summed-out sites. Each sums to `n`, so `h - h'` has absolute sum at most `2n`.
+
+Suppose one orbit `o` is dropped and the other 26 sums agree. The table has rank 27, so `h - h'` lies on one line. That line is spanned by a least integer vector `u_o`, and `h - h'` is a multiple of it. A fork needs `n` at least half the absolute sum of `u_o`.
+
+The suite computes the 26 vectors `u_o` of degrees 2 to 8 exactly. For the least `n` it finds 64 for the degree-8 orbit and 12 to 64 over the thirteen degree-4 orbits. It finds 15 to 32 for the six degree-2 orbits and for the six degree-6 orbits.
+
+The 4 by 4 torus has `n = 4`. The bound is a necessary condition, not a witness. No bound for dropping several orbits at once is given here.
+
+**Observation: couplings where a term vanishes (`verified` as a sign change at 40 digits).** Expand `ln 2cosh(h)` of the block in the products of its eight spins. Odd products have coefficient zero. The suite computes the 27 even coefficients with 40-digit decimals on a grid of 470 values of `x`, in steps of 1/50 up to 3 and then 1/10 up to 40. None vanishes at a grid point. Four change sign. This is numerical, with no error bound.
+
+The four are the degree-6 orbit of `{E, W, NE, NW, SW, SE}` at `x` near 1.987456 and the degree-4 orbits of `{E, W, NE, NW}`, `{E, N, NW, SE}` and `{E, W, NE, SE}` at `x` near 2.062078, 3.755034 and 4.250651. At such a coupling that term can be left out of the description. Zeros closer together than one grid step would be missed, so the list is a sample. For generic `K` all 27 orbits are needed.
+
+**Label.** The ring result, the one-step closure and its couplings, and the failure of the checkerboard sum with longer-range terms are known. That the nearest-neighbour description alone forks in two dimensions is the usual point that new couplings appear. The explicit witness was not looked up.
+
+The two observations above are small and elementary once stated. They are the bound on the size of a lattice that can show a fork when one orbit is dropped, and the four couplings. Searches by mechanism did not find either. A search that finds nothing does not show absence. They carry no label above a concrete local observation.
+
 ## 8. What Each Layer Could Adopt
 
 Every entry in the third column is a `hypothesis`. None is merged into a default branch. State on 2026-11-20: every item named is open, except that the two `mcproof` fixes in the matrix are merged into a feature branch and not into main.
@@ -527,7 +609,7 @@ python3 -B scripts/verify_gate_contracts.py --report
 Last lines of the first command. The second prints the same apart from the time.
 
 ```text
-Ran 26 tests in 9.500s
+Ran 31 tests in 9.286s
 
 OK
 ```
@@ -554,6 +636,11 @@ Contract 3, exact gate under feedback: loops run 472392  loops that ended in an 
   sampled oracle, (samples, committed false passes, false passes after one detailed answer): (20, 1, 20)
 Closure census: {'systems': 256, 'closed': 64, 'not_closed': 192, 'one_state_changes_tried': 256, 'subsets_fooled': 960}
 Polarity census: {'systems': 60, 'specs_allowing_more': 694, 'specs_allowing_less': 30026, 'unsound_bounds': 31680, 'void_specs': 14720, 'refuted_by_one_step': 31680}
+Decimation, ring (sizes, couplings y = e^K, classes per size): {'sizes': (3, 4, 5, 6, 7), 'couplings': ['2', '3/2', '5/3'], 'classes': {3: 2, 4: 3, 5: 3, 6: 4, 7: 4}}
+Decimation, torus (seed 20261124): {'couplings': ['2', '3/2', '5/3'], '4x4_nn_classes': 7, '4x4_nn_forking': 1, '4x4_signatures_in_forking_class': [(0, 8, 0), (2, 4, 2), (3, 4, 1), (4, 4, 0), (6, 0, 2), (8, 0, 0)], '4x4_enlarged_classes': 12, '4x4_without_four_spin_forking': 1, 'witness_sizes': [(6, 6), (6, 8), (8, 6), (8, 8), (10, 10)], 'witness_nn_value': 40}
+Decimation, second step on the 4x4 coarse torus: {'class_count': 27, 'orbit_count': 27, 'blocks_checked': 256, 'D2': (115, 0), 'D0': (29, 19), 'D1': (268, 21), 'curve_points': ['2', '3/2', '7/5', '5']}
+  dropped orbits: {'single_drops_without_fork': 20, 'degree_6_and_8_dropped': (115, 0), 'degree_0_and_2_only': (108, 6)}  least summed-out sites per single dropped orbit, by degree: {2: [15, 15, 16, 16, 32, 32], 4: [12, 12, 15, 15, 15, 15, 16, 16, 16, 16, 16, 64, 64], 6: [15, 15, 16, 16, 32, 32], 8: [64]}
+  zeros of block coefficients: {'grid_points': 470, 'smallest_abs_coefficient_on_grid': 1.4226997740821344e-23, 'zeros': [(6, (0, 2, 4, 5, 6, 7), 1.9874559929133797), (4, (0, 2, 4, 5), 2.0620781369064782), (4, (0, 1, 5, 7), 3.755033876584305), (4, (0, 2, 4, 7), 4.25065098423646)]}
 Thousandths as 32-bit floats (above, below, equal, n/1024 exact): (503, 489, 8, 1025)
 ```
 

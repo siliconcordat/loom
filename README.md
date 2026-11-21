@@ -31,7 +31,7 @@ This repository holds research, mathematical proofs, roofline arithmetic, and an
 | [`scripts/verify_convergences.py`](scripts/verify_convergences.py) | Standard-library `unittest` and simulation suite checking `docs/05` (zone compiler, cliff duality, quantized packing) | Passing (3/3) |
 | [`scripts/verify_lattice.py`](scripts/verify_lattice.py) | Standard-library `unittest` and rollout suite checking `docs/07` (shared-token isolation, `RMSNorm` bleed, KV re-poisoning, `L_0` decay, FiLM packing, L1 rooflines) | Passing (4/4) |
 | [`scripts/gatecheck.py`](scripts/gatecheck.py) | Standard-library conformance harness for any accept/reject gate: default reject, omission, encoding, optimizer parity, and isolation, run through an adapter | Self-test passing (leaky toy gate fails 5 of 5 relations, strict toy gate passes 5 of 5) |
-| [`scripts/verify_gate_contracts.py`](scripts/verify_gate_contracts.py) | Standard-library `unittest` suite checking `docs/09` (the harness on two toy gates and under 32 planted breaks, the latch in exact rationals, absorbing a failed anchor and revising the specification, exact-oracle soundness, closure and polarity) | Passing (26/26) |
+| [`scripts/verify_gate_contracts.py`](scripts/verify_gate_contracts.py) | Standard-library `unittest` suite checking `docs/09` (the harness on two toy gates and under 32 planted breaks, the latch in exact rationals, absorbing a failed anchor and revising the specification, exact-oracle soundness, closure and polarity, and Ising decimation as a worked case) | Passing (31/31) |
 
 ## Check the Math
 
