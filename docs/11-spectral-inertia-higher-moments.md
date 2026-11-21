@@ -1,6 +1,6 @@
 # Spectral & Inertia Higher-Moment Rank Bounds, Non-Affine Complex-Hermitian Box Certification, and Dual-Oracle Exact $\mathbb{Q}(i)$ Verification
 
-Companion research note extending `docs/10-exact-inertia-certificates.md` ([`siliconcordat/loom#7`](https://github.com/siliconcordat/loom/pull/7)). All code, full proofs, exact test suites, and mutation checks live in the standalone zero-dependency repository **[`siliconcordat/spectral-inertia`](https://github.com/siliconcordat/spectral-inertia)**.
+Companion research note extending `docs/10-exact-inertia-certificates.md` ([`siliconcordat/loom#7`](https://github.com/siliconcordat/loom/pull/7)). All code, full proofs, exact test suites, and mutation checks live in the standalone zero-dependency repository **[`Foundation-0/spectral-inertia`](https://github.com/Foundation-0/spectral-inertia)**.
 
 Statuses follow the Evidence Discipline in [`README.md`](../README.md): `verified` means proved and independently reproduced in exact zero-float arithmetic across all isolated R4 Python modes (`-I -B`, `-I -O -B`, `-I -B -W error`, `-I -O -B -W error`); `source claim` means attributed to an outside paper or PR; `hypothesis` / `uncompiled_source` is marked explicitly where applicable.
 
@@ -19,7 +19,7 @@ Section 6 of `docs/10` explicitly listed four open limits:
 - no second, independent zero-shared-code exact inertia checker existed;
 - no Lean 4 formalization existed.
 
-This companion note and [`siliconcordat/spectral-inertia`](https://github.com/siliconcordat/spectral-inertia) close those gaps across three independently audited tracks (`AUDIT-002`, `AUDIT-014`, `AUDIT-015R`, `AUDIT-016R`).
+This companion note and [`Foundation-0/spectral-inertia`](https://github.com/Foundation-0/spectral-inertia) close those gaps across three independently audited tracks (`AUDIT-002`, `AUDIT-014`, `AUDIT-015R`, `AUDIT-016R`).
 
 ---
 
@@ -90,14 +90,14 @@ In the 3-parameter peak-matched specialization ($\gamma_3 = 0$, using only $\ope
 - **Oracle 1 (Sylvester congruence):** Supports both general $C M C^* = D$ ($C C^{-1} = I$) and `loom#7` $P M P^* = L D L^*$ JSON certificates with strict lowest-terms canonical ASCII rational parsing (rejecting bool, float, whitespace, trailing `\n`, underscores, Unicode digits, unreduced `"2/4"` / `"3/1"` / `"0/1"`, duplicate JSON keys, `NaN`/`Infinity`) and full Mode B $P = H - Q \succeq 0$ second-congruence certification.
 - **Oracle 2 (Independent spectral oracle):** Raw `(Fraction, Fraction)` Faddeev–LeVerrier characteristic polynomial + exact Cayley–Hamilton self-check ($B_n + c_n I = 0$) + exact Descartes rule of signs + exact Sturm sequence on the Yun/GCD square-free peel (`100%` agreement across `120` in-suite + `100` independent fresh complex $\mathbb{Q}(i)$ matrices including high-multiplicity roots, zero diagonals, and all 5 rows of the $2\times 2$ Hermitian block table).
 - **R5 refusal-site mutation suite (`tests/run_mutation_suite.py`):** **`41/41` mutants KILLED (`100.0%`, `0` survivors)** under both `-I -B` and `-I -O -B`.
-- **Lean 4 formalization (`uncompiled_source`):** Core algebraic & SOS identities are written in [`lean/SpectralInertia/Basic.lean`](https://github.com/siliconcordat/spectral-inertia/blob/main/lean/SpectralInertia/Basic.lean); marked `uncompiled_source` because `lean`/`lake` was not installed on the authoring host.
+- **Lean 4 formalization (`uncompiled_source`):** Core algebraic & SOS identities are written in [`lean/SpectralInertia/Basic.lean`](https://github.com/Foundation-0/spectral-inertia/blob/main/lean/SpectralInertia/Basic.lean); marked `uncompiled_source` because `lean`/`lake` was not installed on the authoring host.
 
 ---
 
 ## 6. Reproduce (`verified`)
 
 ```bash
-git clone https://github.com/siliconcordat/spectral-inertia.git
+git clone https://github.com/Foundation-0/spectral-inertia.git
 cd spectral-inertia
 python3 -I -B run_all.py
 python3 -I -O -B run_all.py
