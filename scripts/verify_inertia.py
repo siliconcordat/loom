@@ -10,6 +10,10 @@ Covers:
   4. The two-bar truss matrices as embedded rational data.
   5. A small synthetic adapter with exact binary fractions, the spectral-bound equivalence, and a
      forged weight matrix rejected by a loader that recomputes the matrix.
+  6. The sharp rank bound R_opt: fresh random exact matrices against the family and against the
+     true count of the compression, explicit exact witnesses of sharpness, and null controls.
+  7. Margin certificates (scripts/margin_cert.py): floors, perturbations, one must-fail control per
+     check, and a guard-removal mutant for every guard of that file.
 
 The producer below is untrusted: the checker re-verifies everything it emits. The independent
 method shares no code with the checker or the producer.
@@ -23,23 +27,36 @@ Print the timing table quoted in docs/10:
 
 from __future__ import annotations
 
+import ast
 import copy
 import importlib.util
 import json
+import math
 import os
 import random
+import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from fractions import Fraction as F
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHECKER_PATH = os.path.join(HERE, "inertia_cert.py")
+MARGIN_PATH = os.path.join(HERE, "margin_cert.py")
 
 # Random-trial counts. An earlier, slower run of this logic used 2,000 matrices and 5,000 bound instances.
 # Each bound instance is tested against (A), (B), seven family members and the best member.
 N_PROPERTY = 1000
 N_BOUNDS = 2000
+# Counts for the sharp rank bound R_opt and the margin certificates (docs/10, sections 3.7 and 2.4).
+# Seeds are fixed here and repeated in every failure message, so a run can be replayed.
+N_ROPT = 600
+SEED_ROPT = 20261201
+N_MARGIN = 300
+SEED_MARGIN = 20261202
+SEED_MARGIN_E = 20261203
+STATS = {}  # counts gathered by the tests, printed by "--stats"
 
 
 def load_checker(path=CHECKER_PATH, name="inertia_cert_under_test"):
@@ -413,12 +430,17 @@ MUTANTS = {
 }
 
 
-def make_mutant(old, new, name="mutant"):
-    if SRC.count(old) != 1:
+def make_mutant(old, new, name="mutant", src=None, path=None):
+    """A copy of a checker with one piece of source replaced. Default: scripts/inertia_cert.py."""
+    text = SRC if src is None else src
+    if text.count(old) != 1:
         raise ValueError("mutation target not found exactly once: %r" % old)
     mod = type(sys)(name)
-    exec(compile(SRC.replace(old, new), name, "exec"), mod.__dict__)
-    mod.CertError = ic.CertError  # same class, so run() catches it
+    if path is not None:
+        mod.__dict__["__file__"] = path
+    exec(compile(text.replace(old, new), name, "exec"), mod.__dict__)
+    if src is None:
+        mod.CertError = ic.CertError  # same class, so run() catches it
     return mod
 
 
@@ -831,6 +853,24 @@ class TestTrussBox(unittest.TestCase):
         for name in ("corner_0.7_0.9", "corner_0.7_1.5", "corner_1.3_0.9", "corner_1.3_1.5"):
             self.assertEqual(self.label(TRUSS[name][3]), (2, 0, 0))
 
+    def test_inertia_on_each_branch_across_the_singular_line(self):
+        # The line is L1 + L2 = 2. Below it the only equilibrium between the pins is on the pin line.
+        # Above it a second equilibrium appears off the line. Stable branch: positive definite on both
+        # sides and singular on the line. The inertia change happens on the on-line branch.
+        for d, side in ((F(-1, 10), "below"), (F(-1, 100), "below"), (F(0), "on"), (F(1, 100), "above"),
+                        (F(1, 10), "above")):
+            L = (F(9, 10), F(11, 10) + d)
+            (x,) = [x for x in online_equilibria(L) if PINS[0] < x < PINS[1]]
+            on_line = self.label(online_hessian(x, L))
+            off = offline_equilibrium(L)
+            if side == "below":
+                self.assertEqual((off, on_line), (None, (2, 0, 0)))
+            elif side == "on":
+                self.assertEqual((off, on_line), (None, (1, 0, 1)))
+            else:
+                self.assertEqual(on_line, (1, 1, 0))
+                self.assertEqual(self.label(offline_matrix(off[0], L)), (2, 0, 0))
+
     def test_near_flat_pair_is_exactly_positive_definite(self):
         L = (F(9, 10), F(11, 10) + F(1, 10 ** 9))
         x, y2 = offline_equilibrium(L)
@@ -921,6 +961,702 @@ class TestAdapterBound(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Sharp rank bound R_opt (docs/10, section 3.7)
+# ---------------------------------------------------------------------------
+
+class BoundError(ValueError):
+    """Raised by a rank-bound check. The checks raise and never use assert, so python -O changes nothing."""
+
+
+def ropt(u, t, S, b):
+    """The joint optimum of the family over scale and weight, in closed form, as Fractions.
+    u = tr P, t = tr Q, S = |P + Q|_F^2, b = declared bound on the positive eigenvalues of Q."""
+    if u <= 0 or u + t <= 0:
+        return F(0)
+    if b > 0 and t > 0 and t * (u + t) >= b * S:
+        den = S - t * t / b
+        if den <= 0:
+            raise BoundError("regime 1 with S - t^2/b <= 0: inputs are not those of a real pair")
+        return u * u / den
+    if S <= 0:
+        raise BoundError("S <= 0 with u + t > 0: inputs are not those of a real pair")
+    return max(F(0), (u + t) ** 2 / S - b)
+
+
+def ropt_case(u, t, S, b):
+    """Which branch of ropt applies: 0 (zero), 1 (u^2 / (S - t^2 / b)), 2 ((u+t)^2 / S - b), or 'edge'."""
+    if u <= 0 or u + t <= 0:
+        return 0
+    if b > 0 and t > 0 and t * (u + t) == b * S:
+        return "edge"
+    return 1 if (b > 0 and t > 0 and t * (u + t) > b * S) else 2
+
+
+def family_members(tp, tq, nn, b):
+    """The right sides of (A), (B), the family at seven weights, and the best member."""
+    cs = (F(0), F(1, 2), F(1), F(2), F(3), F(7, 2), F(2) * (tq - b) / b if b and tq >= b else F(0))
+    return ([rhs_A(tp, tq, nn, b), rhs_B(tp, tq, nn, b), rhs_best(tp, tq, nn, b)]
+            + [rhs_family(c, tp, tq, nn, b) for c in cs])
+
+
+def check_dominates_family(R, members):
+    for m in members:
+        if R < m:
+            raise BoundError("R_opt %s is below a family member %s" % (R, m))
+
+
+def check_below_count(R, count):
+    if R > count:
+        raise BoundError("R_opt %s exceeds the true count %d" % (R, count))
+
+
+def cinner(a, H, c):
+    """a* H c for column vectors a, c and a matrix H, all with (re, im) entries."""
+    n = len(a)
+    tot = Z
+    for i in range(n):
+        for j in range(n):
+            tot = cadd(tot, cmul(cmul(cconj(a[i]), H[i][j]), c[j]))
+    return tot
+
+
+def orthogonal_basis(rng, n, cplx):
+    """n pairwise orthogonal nonzero vectors with (re, im) Fraction entries, by exact Gram-Schmidt."""
+    out = []
+    while len(out) < n:
+        w = [(rnd(rng), rnd(rng) if cplx else F(0)) for _ in range(n)]
+        for v in out:
+            nv = sum(x[0] * x[0] + x[1] * x[1] for x in v)
+            dot = Z
+            for i in range(n):
+                dot = cadd(dot, cmul(cconj(v[i]), w[i]))
+            mu = (dot[0] / nv, dot[1] / nv)
+            w = [csub(w[i], cmul(mu, v[i])) for i in range(n)]
+        if any(x != Z for x in w):
+            out.append(w)
+    return out
+
+
+def ropt_instance(rng):
+    """P PSD, Q Hermitian with an exactly known eigenbasis. Returns P, Q, the basis and the eigenvalues of Q."""
+    n = rng.randint(1, 5)
+    cplx = rng.random() < 0.5
+    vs = orthogonal_basis(rng, n, cplx)
+    ws = [rng.choice([-3, -2, -1, 0, 1, 2, 3, 5]) * F(rng.randint(1, 4), 4) for _ in range(n)]
+    flat = rng.random() < 0.3  # equal positive eigenvalues and no negative ones: the branch u^2 / (S - t^2 / b)
+    if flat:
+        top = max(ws)
+        ws = [top if w > 0 else F(0) for w in ws]
+    Q = zero_matrix(n)
+    for v, w in zip(vs, ws):
+        nv = sum(x[0] * x[0] + x[1] * x[1] for x in v)
+        Q = addm(Q, herm_rank1(v, w / nv))
+    P = zero_matrix(n)
+    for _ in range(rng.randint(0, n)):
+        ent = lambda: (rnd(rng) / 2, rnd(rng) / 2 if cplx else F(0))
+        P = addm(P, herm_rank1([ent() for _ in range(n)], abs(rnd(rng)) + F(1, 4)))
+    if flat or rng.random() < 0.4:  # a small P next to a large Q
+        P = scalem(P, F(1, rng.randint(4, 12)))
+    return P, Q, vs, ws
+
+
+def compression_count(H, vs, ws):
+    """Number of positive eigenvalues of the compression of H to the complement of the positive
+    eigenspace of Q. The complement is spanned by the basis vectors with eigenvalue <= 0.
+    The count does not depend on the basis of the complement (congruence), and the repo's checker reads it."""
+    cols = [v for v, w in zip(vs, ws) if w <= 0]
+    if not cols:
+        return 0
+    Hc = [[cinner(a, H, c) for c in cols] for a in cols]
+    return certified_inertia(Hc)[0]
+
+
+def check_witness(Pd, Qd, b_declared, rank_claimed):
+    """Pd and Qd are the diagonals of P and Q (Fractions). The pair must be a valid instance of the
+    bound's hypotheses, and rank_claimed must be the sharp value max(1, ceil R_opt) of its four numbers."""
+    n = len(Pd)
+    if len(Qd) != n or any(p < 0 for p in Pd):
+        raise BoundError("P is not positive semidefinite")
+    P = real_to_c([[Pd[i] if i == j else F(0) for j in range(n)] for i in range(n)])
+    Q = real_to_c([[Qd[i] if i == j else F(0) for j in range(n)] for i in range(n)])
+    if exact_rank(P) != rank_claimed:
+        raise BoundError("rank of P is %d, not %d" % (exact_rank(P), rank_claimed))
+    if certified_inertia(Q)[0] > b_declared:
+        raise BoundError("Q has more than %d positive eigenvalues" % b_declared)
+    u, t, S = trace(P), trace(Q), fro2(addm(P, Q))
+    if u <= 0:
+        raise BoundError("tr P is not positive")
+    sharp = max(1, math.ceil(ropt(u, t, S, b_declared)))
+    if sharp != rank_claimed:
+        raise BoundError("sharp value is %d, not %d" % (sharp, rank_claimed))
+    return u, t, S
+
+
+def check_request(u, t, S, b, k):
+    """Can the four numbers be realised with rank P = k? Only if k is at least max(1, ceil R_opt)."""
+    if k < max(1, math.ceil(ropt(u, t, S, b))):
+        raise BoundError("rank %d is below the sharp value" % k)
+
+
+def witness(kind, r, b, u, t, x=F(0)):
+    """Explicit diagonal pairs (P, Q) of rank r with b positive eigenvalues in Q.
+    "lo" realises the smallest S for the regime  (u+t)^2 / S - b,  "hi" the one for  u^2 / (S - t^2 / b),
+    both with R_opt = r. A nonzero x adds a coordinate with P = 0 and Q = -x, and lifts the first
+    positive entry of Q by x. That keeps u, t and b and raises S by 2 x^2 + 2 x q0."""
+    if kind == "lo":
+        h = (u + t) / (r + b)
+        Pd, Qd = [F(0)] * b + [u / r] * r, [h] * b + [-(b * h - t) / r] * r
+    elif kind == "hi":
+        Pd, Qd = [F(0)] * b + [u / r] * r, [t / b] * b + [F(0)] * r
+    else:
+        raise ValueError(kind)
+    if x != 0:
+        Qd = [Qd[0] + x] + Qd[1:] + [-x]
+        Pd = Pd + [F(0)]
+    return Pd, Qd
+
+
+# (kind, r, b, u, t, x): the regime is checked from the numbers, not taken from this table.
+SHARP_TUPLES = [
+    ("lo", 1, 1, F(2), F(1), F(0)), ("lo", 1, 1, F(2), F(1), F(1, 2)), ("lo", 3, 2, F(5), F(-1), F(0)),
+    ("lo", 2, 0, F(3), F(-1), F(0)), ("lo", 4, 3, F(2), F(1), F(1, 20)), ("lo", 2, 1, F(3), F(1, 2), F(1, 4)),
+    ("hi", 2, 1, F(1), F(3), F(0)), ("hi", 3, 2, F(1), F(4), F(0)), ("hi", 1, 1, F(1), F(2), F(1, 3)),
+    ("hi", 2, 1, F(1), F(3), F(1, 20)), ("hi", 3, 2, F(1), F(4), F(1, 100)),
+    # the regime boundary r t = b u, built by both constructions
+    ("lo", 1, 1, F(2), F(2), F(0)), ("hi", 1, 1, F(2), F(2), F(0)),
+    ("lo", 2, 3, F(4), F(6), F(0)), ("hi", 2, 3, F(4), F(6), F(0)),
+]
+
+
+class TestSharpRankBound(unittest.TestCase):
+    def test_random_exact_matrices(self):
+        rng = random.Random(SEED_ROPT)
+        cases = {0: 0, 1: 0, 2: 0, "edge": 0}
+        beats_best = 0
+        for k in range(N_ROPT):
+            P, Q, vs, ws = ropt_instance(rng)
+            H = addm(P, Q)
+            b = certified_inertia(Q)[0]  # exact positive count of Q, from a checked certificate
+            self.assertEqual(b, sum(1 for w in ws if w > 0), "seed %d instance %d" % (SEED_ROPT, k))
+            tp, tq, nn = trace(P), trace(Q), fro2(H)
+            R = ropt(tp, tq, nn, b)
+            cases[ropt_case(tp, tq, nn, b)] += 1
+            check_dominates_family(R, family_members(tp, tq, nn, b))
+            count = compression_count(H, vs, ws)
+            check_below_count(R, count)
+            self.assertLessEqual(count, exact_rank(P), "chain, seed %d instance %d" % (SEED_ROPT, k))
+            beats_best += R > max(F(0), rhs_best(tp, tq, nn, b))
+        for case in (0, 1, 2):
+            self.assertGreater(cases[case], 0, "no instance reached case %r" % (case,))
+        self.assertGreater(beats_best, 0)
+        STATS["ropt_instances"] = N_ROPT
+        STATS["ropt_cases"] = {str(k): v for k, v in cases.items()}
+        STATS["ropt_strictly_beats_best_member"] = beats_best
+
+    def test_declaring_b_one_too_small_must_fail(self):
+        # Null control for the check "R_opt never exceeds the true count".
+        rng = random.Random(SEED_ROPT)
+        fired = inconsistent = tried = 0
+        for _ in range(N_ROPT):
+            P, Q, vs, ws = ropt_instance(rng)
+            H = addm(P, Q)
+            b = certified_inertia(Q)[0]
+            if b == 0:
+                continue
+            tried += 1
+            try:
+                R = ropt(trace(P), trace(Q), fro2(H), b - 1)
+            except BoundError:  # the numbers cannot belong to a pair with that b: refused before the comparison
+                inconsistent += 1
+                continue
+            try:
+                check_below_count(R, compression_count(H, vs, ws))
+            except BoundError:
+                fired += 1
+        self.assertGreater(fired, 0, "the control never fired in %d tries" % tried)
+        STATS["ropt_b_one_too_small"] = {"tried": tried, "R_opt_above_true_count": fired,
+                                         "refused_as_inconsistent": inconsistent}
+
+    def test_a_wrong_r_opt_must_fail_the_family_check(self):
+        # Null control for "R_opt is at least every family member": R_opt replaced by zero.
+        rng = random.Random(SEED_ROPT)
+        fired = 0
+        for _ in range(N_ROPT):
+            P, Q, vs, ws = ropt_instance(rng)
+            b = certified_inertia(Q)[0]
+            try:
+                check_dominates_family(F(0), family_members(trace(P), trace(Q), fro2(addm(P, Q)), b))
+            except BoundError:
+                fired += 1
+        self.assertGreater(fired, 0)
+        STATS["ropt_zero_fired_family_check"] = fired
+
+    def test_explicit_witnesses_of_sharpness(self):
+        seen = set()
+        for kind, r, b, u, t, x in SHARP_TUPLES:
+            Pd, Qd = witness(kind, r, b, u, t, x)
+            tup = check_witness(Pd, Qd, b, r)
+            seen.add(ropt_case(*tup, b))
+            for k in range(1, r):  # every smaller rank is excluded for these four numbers
+                self.assertRaises(BoundError, check_request, *tup, b, k)
+            check_request(*tup, b, r)
+            check_request(*tup, b, r + 1)
+        self.assertEqual(seen, {1, 2, "edge"})
+        STATS["sharp_tuples"] = len(SHARP_TUPLES)
+
+    def test_zero_branch_witnesses(self):
+        # u + t <= 0 gives R_opt = 0 and the smallest rank is 1. P = [u], Q = [t], one coordinate.
+        for u, t in ((F(2), F(-5)), (F(3), F(-3)), (F(1, 2), F(-1, 2))):
+            tup = check_witness([u], [t], 0, 1)
+            self.assertEqual(ropt_case(*tup, 0), 0)
+            self.assertRaises(BoundError, check_request, *tup, 0, 0)
+
+    def test_requesting_one_rank_lower_must_fail(self):
+        # Null control: for every witness, rank r - 1 (or rank 0 when r = 1) is refused by the check.
+        for kind, r, b, u, t, x in SHARP_TUPLES:
+            Pd, Qd = witness(kind, r, b, u, t, x)
+            tup = check_witness(Pd, Qd, b, r)
+            self.assertRaises(BoundError, check_request, *tup, b, r - 1)
+            self.assertRaises(BoundError, check_witness, Pd, Qd, b, r - 1)
+
+    def test_declaring_b_one_too_small_must_fail_the_witness_check(self):
+        for kind, r, b, u, t, x in SHARP_TUPLES:
+            if b >= 1:
+                Pd, Qd = witness(kind, r, b, u, t, x)
+                self.assertRaises(BoundError, check_witness, Pd, Qd, b - 1, r)
+
+    def test_a_witness_pushed_too_far_must_fail(self):
+        # Lifting S past the point where R_opt drops to r - 1 or below: the rank claimed is no longer sharp.
+        Pd, Qd = witness("lo", 4, 3, F(2), F(1), F(3))
+        self.assertRaises(BoundError, check_witness, Pd, Qd, 3, 4)
+        Pd, Qd = witness("hi", 2, 1, F(1), F(3), F(5, 2))
+        self.assertRaises(BoundError, check_witness, Pd, Qd, 1, 2)
+
+    def test_a_witness_that_is_not_psd_must_fail(self):
+        self.assertRaises(BoundError, check_witness, [F(2), F(-1)], [F(0), F(0)], 0, 1)
+
+    def test_the_formula_is_the_supremum_over_scale_and_weight(self):
+        # The scaled family bound for the pair (sP, sQ) with weight C >= 1 is
+        #   g(s, C) = 2 s u + 2 C s t - C^2 b - s^2 S.
+        # R_opt is max(0, sup g). Exact check: no grid point is above R_opt, and the closed-form
+        # maximiser reaches it. This needs S > t^2 / b, which makes g concave.
+        g = lambda u, t, S, b, s, C: 2 * s * u + 2 * C * s * t - C * C * b - s * s * S
+        rng = random.Random(SEED_ROPT + 1)
+        regime = {1: 0, 2: 0}
+        for _ in range(300):
+            u, b = F(rng.randint(1, 12), rng.randint(1, 4)), rng.randint(1, 4)
+            t = F(rng.randint(-30, 30), rng.randint(1, 4))
+            S = F(rng.randint(1, 80), rng.randint(1, 4)) + max(F(0), t * t / b)
+            R = ropt(u, t, S, b)
+            for s in (F(k, 8) for k in range(1, 40)):
+                for C in (F(1), F(3, 2), F(2), F(3), F(5)):
+                    self.assertLessEqual(g(u, t, S, b, s, C), R)
+            if t > 0 and t * (u + t) >= b * S:
+                s = u / (S - t * t / b)
+                C = s * t / b
+                self.assertGreaterEqual(C, 1)
+                self.assertEqual(g(u, t, S, b, s, C), R)
+                regime[1] += 1
+            elif u + t > 0:
+                s = (u + t) / S
+                self.assertEqual(g(u, t, S, b, s, F(1)), (u + t) ** 2 / S - b)
+                self.assertEqual(R, max(F(0), g(u, t, S, b, s, F(1))))
+                regime[2] += 1
+        self.assertTrue(regime[1] > 0 and regime[2] > 0)
+
+
+# ---------------------------------------------------------------------------
+# Margin certificates (docs/10, section 2.4)
+# ---------------------------------------------------------------------------
+
+mc = load_checker(MARGIN_PATH, "margin_cert_under_test")
+with open(MARGIN_PATH, encoding="utf-8") as _fh:
+    MSRC = _fh.read()
+
+
+def frac_s(x):
+    x = F(x)
+    return "%d/%d" % (x.numerator, x.denominator)
+
+
+def mstr(M):
+    return [[frac_s(x) for x in r] for r in M]
+
+
+def margin_text(M, P, L, D, lam, claim=False, extra=None):
+    o = {"M": mstr(M), "P": list(P), "L": mstr(L), "D": mstr(D), "lambda": frac_s(lam)}
+    if claim:
+        o["claim_floor"] = frac_s(lam)
+    if extra:
+        o.update(extra)
+    return json.dumps(o)
+
+
+def build_margin(rng, n, lam, dvec=None, zero_prob=F(1, 3)):
+    """Untrusted producer. M = P^T L D L^T P + lam I with L unit lower triangular and D = diag(dvec)."""
+    L = [[F(1) if i == j else (rnd(rng) if j < i else F(0)) for j in range(n)] for i in range(n)]
+    if dvec is None:
+        dvec = [F(0) if rng.random() < zero_prob else abs(rnd(rng)) + F(1, 4) for _ in range(n)]
+    P = list(range(n))
+    rng.shuffle(P)
+    G = [[sum(L[i][k] * dvec[k] * L[j][k] for k in range(n)) for j in range(n)] for i in range(n)]
+    M = [[F(0)] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            M[P[i]][P[j]] = G[i][j] + (lam if i == j else 0)
+    return M, P, L, [[dvec[i] if i == j else F(0) for j in range(n)] for i in range(n)], lam
+
+
+def shifted(M, lam):
+    return [[M[i][j] - (lam if i == j else 0) for j in range(len(M))] for i in range(len(M))]
+
+
+def msum(A, B):
+    return [[A[i][j] + B[i][j] for j in range(len(A))] for i in range(len(A))]
+
+
+def null_vector(L, P, D):
+    """A rational x with (M - lam I) x = 0, from the first zero pivot of D. None when there is none."""
+    n = len(L)
+    ks = [k for k in range(n) if D[k][k] == 0]
+    if not ks:
+        return None
+    k = ks[0]
+    z = [F(0)] * n
+    z[k] = F(1)
+    for i in range(k - 1, -1, -1):  # solve L^T z = e_k, L unit lower
+        z[i] = -sum(L[j][i] * z[j] for j in range(i + 1, n))
+    x = [F(0)] * n
+    for i in range(n):
+        x[P[i]] = z[i]
+    return x
+
+
+def rank_one(x, scale):
+    nx = sum(v * v for v in x)
+    return [[scale * x[i] * x[j] / nx for j in range(len(x))] for i in range(len(x))]
+
+
+def mrun(fn):
+    try:
+        return ("ACCEPT", fn())
+    except mc.CertError as e:
+        return ("REJECT", str(e))
+
+
+def real_inertia(X):
+    """Independent exact inertia of a real symmetric matrix, and the repo checker's reading of it."""
+    c = real_to_c(X)
+    want = indep_inertia(c, False)
+    got = certified_inertia(c)
+    if want != got:
+        raise BoundError("independent inertia %r differs from the checker's %r" % (want, got))
+    return got
+
+
+# A fixed 4 by 4 certificate with a zero pivot, so the floor lam = 3/2 is attained.
+MB = build_margin(random.Random(7), 4, F(3, 2), dvec=[F(2), F(0), F(1), F(3, 2)])
+MB_TEXT = margin_text(*MB)
+MB_X = null_vector(MB[2], MB[1], MB[3])
+
+
+def margin_controls():
+    """name -> (what to run on a module, source text to remove, replacement, unsound or None).
+    Each run must be rejected by the real checker. With the guard removed it must be accepted.
+    unsound() is True when the accepted claim would be false, so the control is a soundness control.
+    None marks a format control: the claim is true, the format forbids it."""
+    M, P, L, D, lam = MB
+    n = 4
+    x = MB_X
+    past = rank_one(x, -(lam + F(1, 100)))
+    both_ok = rank_one(x, -lam)
+    c = {}
+    c["perturbation_just_past_lambda"] = (
+        lambda m: m.psd_verdict(MB_TEXT, E=mstr(past)),
+        'need(f2 <= lam * lam, "||E||_F^2 exceeds lambda^2: margin not certified")',
+        'need(True, "||E||_F^2 exceeds lambda^2: margin not certified")',
+        lambda: real_inertia(msum(M, past))[1] > 0)
+    c["wrong_lambda"] = (
+        lambda m: m.check(margin_text(M, P, L, D, lam + F(1, 2))),
+        'need(lhs == rhs, "P (M - lambda I) P^T != L D L^T at (%d,%d)" % (i, j))',
+        'need(True or lhs == rhs, "P (M - lambda I) P^T != L D L^T at (%d,%d)" % (i, j))',
+        lambda: real_inertia(shifted(M, lam + F(1, 2)))[1] > 0)
+    dneg = build_margin(random.Random(8), 4, F(3, 2), dvec=[F(2), F(-1), F(1), F(3, 2)])
+    c["negative_pivot"] = (
+        lambda m: m.check(margin_text(*dneg)),
+        'need(D[k][k] >= 0, "D has a negative entry")', 'need(True, "D has a negative entry")',
+        lambda: real_inertia(shifted(dneg[0], dneg[4]))[1] > 0)
+    L2 = [r[:] for r in L]
+    D2 = [r[:] for r in D]
+    for r in range(n):
+        L2[r][0] *= 2
+    D2[0][0] /= 4
+    c["non_unit_L"] = (
+        lambda m: m.check(margin_text(M, P, L2, D2, lam)),
+        'need(i != j or L[i][i] == 1, "L diagonal is not 1")', 'need(True, "L diagonal is not 1")', None)
+    c["L_entry_above_the_diagonal"] = (
+        lambda m: m.check(margin_text([[F(2)] * 2] * 2, [0, 1], [[F(1), F(1)], [F(1), F(1)]],
+                                      [[F(1), F(0)], [F(0), F(1)]], F(0))),
+        'need(j <= i or L[i][j] == 0, "L not lower triangular")', 'need(True, "L not lower triangular")', None)
+    c["D_not_diagonal"] = (
+        lambda m: m.check(margin_text([[F(0)] * 2] * 2, [0, 1], [[F(1), F(0)], [F(0), F(1)]],
+                                      [[F(0), F(5)], [F(5), F(0)]], F(0))),
+        'need(i == j or D[i][j] == 0, "D not diagonal")', 'need(True, "D not diagonal")', None)
+    c["repeated_index_in_P"] = (
+        lambda m: m.check(margin_text([[F(-1), F(0)], [F(0), F(1)]], [1, 1], [[F(1), F(0)], [F(1), F(1)]],
+                                      [[F(1), F(0)], [F(0), F(0)]], F(0))),
+        'and sorted(P) == list(range(n)), "P is not a permutation")', 'and True, "P is not a permutation")',
+        lambda: real_inertia([[F(-1), F(0)], [F(0), F(1)]])[1] > 0)
+    d = json.loads(MB_TEXT)
+    d["M"][0][0] = "%d/%d" % (2 * F(M[0][0]).numerator, 2 * F(M[0][0]).denominator)
+    c["non_canonical_rational"] = (
+        lambda m: m.check(json.dumps(d)),
+        'need(s != "-0/1" and gcd(p, q) == 1, "entry is not in lowest terms")',
+        'need(True, "entry is not in lowest terms")', None)
+    d2 = json.loads(MB_TEXT)
+    d2["L"][0][1] = "-0/1"
+    c["negative_zero"] = (
+        lambda m: m.check(json.dumps(d2)),
+        'need(s != "-0/1" and gcd(p, q) == 1, "entry is not in lowest terms")',
+        'need(True, "entry is not in lowest terms")', None)
+    indef = ([[F(-16), F(0)], [F(0), F(5)]], [0, 1], [[F(1), F(0)], [F(0), F(1)]],
+             [[F(84), F(0)], [F(0), F(105)]], F(-100))
+    c["negative_lambda_read_as_psd"] = (
+        lambda m: m.psd_verdict(margin_text(*indef)),
+        'need(lam >= 0, "lambda < 0: a floor, not a PSD certificate")',
+        'need(True, "lambda < 0: a floor, not a PSD certificate")',
+        lambda: real_inertia(indef[0])[1] > 0)
+    c["negative_lambda_with_a_frobenius_perturbation"] = (
+        lambda m: m.psd_verdict(margin_text(*indef), E=mstr([[F(0), F(0)], [F(0), F(0)]])),
+        'need(lam >= 0, "lambda < 0: the Frobenius test needs lambda >= 0")',
+        'need(True, "lambda < 0: the Frobenius test needs lambda >= 0")',
+        lambda: real_inertia(indef[0])[1] > 0)
+    E_low = [[-2 * lam if i == j else F(0) for j in range(n)] for i in range(n)]
+    idn = [[F(1) if i == j else F(0) for j in range(n)] for i in range(n)]
+    zer = [[F(0)] * n for _ in range(n)]
+    c["second_certificate_floor_below_zero"] = (
+        lambda m: m.psd_verdict(MB_TEXT, E_text=margin_text(E_low, list(range(n)), idn, zer, -2 * lam)),
+        'need(floor >= 0, "certified floor of M + E is below zero")',
+        'need(True, "certified floor of M + E is below zero")',
+        lambda: real_inertia(msum(M, E_low))[1] > 0)
+    c["claim_floor_differs_from_lambda"] = (
+        lambda m: m.check(margin_text(M, P, L, D, lam, extra={"claim_floor": frac_s(lam + 1)})),
+        'need(frac(c["claim_floor"]) == lam, "claim_floor differs from lambda")',
+        'need(True, "claim_floor differs from lambda")', None)
+    c["both_E_and_E_text_given"] = (
+        lambda m: m.psd_verdict(MB_TEXT, E=mstr(both_ok), E_text=margin_text(zer, list(range(n)), idn, zer, F(0))),
+        'need(E is None or E_text is None, "give E or E_text, not both")',
+        'need(True, "give E or E_text, not both")', None)
+    c["E_text_of_the_wrong_size"] = (
+        lambda m: m.psd_verdict(MB_TEXT, E_text=margin_text([[F(0)]], [0], [[F(1)]], [[F(0)]], F(0))),
+        'need(len(Em) == n, "E has the wrong size")', 'need(True, "E has the wrong size")', None)
+    c["E_not_symmetric"] = (
+        lambda m: m.psd_verdict(MB_TEXT, E=mstr([[F(0), F(1, 100)] + [F(0)] * 2] + [[F(0)] * 4] * 3)),
+        'need(Eq[i][j] == Eq[j][i], "E not symmetric")', 'need(True, "E not symmetric")', None)
+    return c
+
+
+MARGIN_RAW = {
+    "float_in_json": MB_TEXT.replace('"3/2"', "1.5", 1),
+    "decimal_string": MB_TEXT.replace('"3/2"', '"1.5"', 1),
+    "bare_integer": MB_TEXT.replace('"1/1"', '"1"', 1),
+    "plus_sign": MB_TEXT.replace('"1/1"', '"+1/1"', 1),
+    "trailing_newline_in_entry": MB_TEXT.replace('"3/2"', '"3/2\\n"', 1),
+    "zero_denominator": MB_TEXT.replace('"1/1"', '"1/0"', 1),
+    "leading_zero": MB_TEXT.replace('"3/2"', '"03/2"', 1),
+    "duplicate_key": MB_TEXT[:-1] + ', "P": %s}' % json.dumps(MB[1]),
+    "missing_lambda": json.dumps({k: v for k, v in json.loads(MB_TEXT).items() if k != "lambda"}),
+    "extra_key": MB_TEXT[:-1] + ', "x": 1}',
+    "entry_past_digit_limit": MB_TEXT.replace('"3/2"', '"%s/1"' % LONG, 1),
+    "truncated": MB_TEXT[:60],
+    "not_an_object": "[]",
+}
+
+# source lines of margin_cert.py that call need(): all must be mutated above or sit in this list
+MARGIN_PARSE_ONLY = (
+    'need(type(s) is str and CANON.fullmatch(s) is not None, "entry is not a canonical string p/q")',
+    'need(type(rows) is list and len(rows) == n, name + ": wrong row count")',
+    'need(type(r) is list and len(r) == n, name + ": wrong shape")',
+    'need(type(c) is dict, "certificate must be an object")',
+    'need(set(c) in ({"M", "P", "L", "D", "lambda"}, {"M", "P", "L", "D", "lambda", "claim_floor"}), "wrong keys")',
+    'need(type(c["M"]) is list and 1 <= len(c["M"]) <= MAXN, "bad M")',
+    'need(M[i][j] == M[j][i], "M not symmetric")',  # a second layer: the identity implies it
+)
+
+
+class TestMarginCertificates(unittest.TestCase):
+    def test_floor_on_random_certificates(self):
+        rng = random.Random(SEED_MARGIN)
+        tight = strict = neg_lambda = indefinite = 0
+        for k in range(N_MARGIN):
+            n = rng.randint(1, 6)
+            lam = rnd(rng)
+            M, P, L, D, lam = build_margin(rng, n, lam)
+            text = margin_text(M, P, L, D, lam)
+            where = "seed %d instance %d" % (SEED_MARGIN, k)
+            self.assertEqual(mc.check(text), lam, where)
+            zeros = sum(1 for i in range(n) if D[i][i] == 0)
+            pos, neg, zero = real_inertia(shifted(M, lam))  # independent method and the repo checker agree
+            self.assertEqual((neg, zero), (0, zeros), where)
+            # the repo's block-pivot checker, given the same L and D, also reads no negative eigenvalue
+            self.assertEqual(ic.check(json.dumps({"M": mstr_c(shifted(M, lam)), "P": P, "L": mstr_c(L),
+                                                  "D": mstr_c(D)})), (n - zeros, 0, zeros), where)
+            if zeros:
+                tight += 1
+                # the floor is attained: any larger lambda is not a floor of M
+                self.assertGreaterEqual(real_inertia(shifted(M, lam + F(1, 1000)))[1], zeros, where)
+                self.assertRaises(mc.CertError, mc.check, margin_text(M, P, L, D, lam + F(1, 1000)))
+            else:
+                strict += 1
+            if lam < 0:
+                neg_lambda += 1
+                indefinite += real_inertia(M)[1] > 0
+                self.assertRaises(mc.CertError, mc.psd_verdict, text)  # a floor below zero is not a PSD proof
+            else:
+                self.assertEqual(mc.psd_verdict(text), "PD" if lam > 0 else "PSD", where)
+                inertia = real_inertia(M)
+                self.assertEqual(inertia[1], 0, where)
+                if lam > 0:
+                    self.assertEqual(inertia[2], 0, where)
+        for count in (tight, strict, neg_lambda, indefinite):
+            self.assertGreater(count, 0)
+        STATS["margin_floor"] = {"certificates": N_MARGIN, "tight": tight, "strict": strict,
+                                 "lambda_below_zero": neg_lambda, "lambda_below_zero_and_M_indefinite": indefinite}
+
+    def test_second_certificate_for_E_is_exact(self):
+        rng = random.Random(SEED_MARGIN_E)
+        frob_weaker = strict = 0
+        for k in range(N_MARGIN):
+            n = rng.randint(1, 5)
+            lam = abs(rnd(rng)) + F(1, 4)
+            M, P, L, D, lam = build_margin(rng, n, lam)
+            # E - mu I = L' D' L'^T with D' >= 0, built directly. mu = -lam + delta, delta >= 0, so
+            # the certified floor of M + E is lam + mu = delta.
+            delta = F(0) if rng.random() < 0.5 else F(rng.randint(1, 4), rng.randint(1, 4))
+            Ee, Pe, Le, De, mu = build_margin(rng, n, -lam + delta)
+            where = "seed %d instance %d" % (SEED_MARGIN_E, k)
+            text, etext = margin_text(M, P, L, D, lam), margin_text(Ee, Pe, Le, De, mu)
+            verdict = mc.psd_verdict(text, E_text=etext)
+            Sum = msum(M, Ee)
+            pos, neg, zero = real_inertia(Sum)
+            self.assertEqual(neg, 0, where)
+            self.assertEqual(verdict, "PD" if delta > 0 else "PSD", where)
+            if delta > 0:
+                strict += 1
+                self.assertEqual(zero, 0, where)
+            floor = mc.check(text) + mc.check(etext)
+            self.assertEqual(floor, delta, where)
+            # Weyl, exactly: M + E - (lam + mu) I has no negative eigenvalue
+            self.assertEqual(real_inertia(shifted(Sum, floor))[1], 0, where)
+            f2 = sum(x * x for r in Ee for x in r)
+            if f2 > lam * lam:
+                frob_weaker += 1
+                self.assertRaises(mc.CertError, mc.psd_verdict, text, E=mstr(Ee))
+            else:
+                self.assertIn(mc.psd_verdict(text, E=mstr(Ee)), ("PSD", "PD"))
+        self.assertGreater(frob_weaker, 0)
+        self.assertGreater(strict, 0)
+        STATS["margin_second_certificate"] = {"pairs": N_MARGIN, "strictly_positive_floor": strict,
+                                              "frobenius_test_refuses_but_exact_route_accepts": frob_weaker}
+
+    def test_sharpness_of_the_frobenius_constant(self):
+        M, P, L, D, lam = MB
+        x = MB_X
+        self.assertEqual([sum(shifted(M, lam)[i][j] * x[j] for j in range(4)) for i in range(4)], [F(0)] * 4)
+        at = rank_one(x, -lam)  # ||E||_F = lam exactly: PSD, singular, accepted
+        self.assertEqual(mc.psd_verdict(MB_TEXT, E=mstr(at)), "PSD")
+        pos, neg, zero = real_inertia(msum(M, at))
+        self.assertEqual((neg, zero >= 1), (0, True))
+        for k in (1, 2, 7, 100, 10 ** 9):  # just past lambda: not PSD, and the check refuses
+            past = rank_one(x, -(lam + F(1, k)))
+            self.assertEqual(real_inertia(msum(M, past))[1], 1, "k=%d" % k)
+            self.assertRaises(mc.CertError, mc.psd_verdict, MB_TEXT, E=mstr(past))
+        # the one-sided test (second certificate) refuses it too, since E + lam I has a negative eigenvalue
+        E_past = rank_one(x, -(lam + F(1, 7)))
+        self.assertEqual(real_inertia(msum(E_past, [[lam if i == j else F(0) for j in range(4)] for i in range(4)]))[1], 1)
+
+    def test_pencil_example(self):
+        # B = [1/2], W = [1], so K = B^T W B = 1/4 and G = B^T B = 1/4. lambda = 1 is certified by
+        # K - lambda G = 0 (a zero pivot). A change of W of size lambda is covered. A change E' of
+        # the reduced matrix K of size lambda is not. It is covered only up to lambda * gamma, with
+        # G - gamma I certified PSD, here gamma = 1/4.
+        K, G, lam = F(1, 4), F(1, 4), F(1)
+        self.assertEqual(real_inertia([[K - lam * G]]), (0, 0, 1))
+        B = F(1, 2)
+        dW = F(-1)  # |dW| <= lambda
+        self.assertEqual(real_inertia([[B * (1 + dW) * B]])[1], 0)
+        self.assertEqual(real_inertia([[K + F(-1, 2)]])[1], 1)  # E' = -1/2, |E'| <= lambda, breaks
+        gamma = F(1, 4)
+        self.assertEqual(real_inertia([[G - gamma]]), (0, 0, 1))
+        self.assertEqual(real_inertia([[K + F(-1, 4)]])[1], 0)  # E' = -lambda * gamma still passes
+        self.assertEqual(real_inertia([[K + F(-1, 4) - F(1, 1000)]])[1], 1)
+
+    def test_every_margin_control_is_rejected_by_the_real_checker(self):
+        for name, (run_it, old, new, unsound) in margin_controls().items():
+            r = mrun(lambda: run_it(mc))
+            self.assertEqual(r[0], "REJECT", "%s: %r" % (name, r))
+
+    def test_raw_margin_controls_are_rejected(self):
+        for name, raw in MARGIN_RAW.items():
+            r = mrun(lambda: mc.check(raw))
+            self.assertEqual(r[0], "REJECT", "%s: %r" % (name, r))
+
+    def test_each_margin_guard_removed_makes_its_control_accepted(self):
+        survivors = []
+        for name, (run_it, old, new, unsound) in margin_controls().items():
+            mut = make_mutant(old, new, "mut_margin_" + name, src=MSRC, path=MARGIN_PATH)
+            r = mrun(lambda: run_it(mut))
+            if r[0] != "ACCEPT":
+                survivors.append(name)
+            if unsound is not None:
+                self.assertTrue(unsound(), "%s is not a soundness control" % name)
+        self.assertEqual(survivors, [], "guards whose removal is not detected by a control")
+        STATS["margin_guard_mutants"] = len(margin_controls())
+
+    def test_every_need_site_of_margin_cert_has_a_control_or_a_reason(self):
+        norm = lambda t: " ".join(t.split())
+        olds = [norm(v[1]) for v in margin_controls().values()]
+        parse_only = [norm(t) for t in MARGIN_PARSE_ONLY]
+        sites = [norm(ast.get_source_segment(MSRC, node)) for node in ast.walk(ast.parse(MSRC))
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "need"]
+        self.assertGreater(len(sites), 15)
+        for site in sites:
+            covered = site in parse_only or any(o in site for o in olds)
+            self.assertTrue(covered, "need() site without control: %s" % site)
+
+    def test_symmetry_check_is_a_second_layer(self):
+        bad = json.loads(MB_TEXT)
+        bad["M"][0][1] = "9/1"
+        self.assertEqual(mrun(lambda: mc.check(json.dumps(bad)))[0], "REJECT")
+        mut = make_mutant('need(M[i][j] == M[j][i], "M not symmetric")', "pass", "mut_sym", src=MSRC, path=MARGIN_PATH)
+        self.assertEqual(mrun(lambda: mut.check(json.dumps(bad)))[0], "REJECT")
+
+    def test_check_accepts_the_good_certificate_and_reads_it_back(self):
+        self.assertEqual(mc.check(MB_TEXT), F(3, 2))
+        self.assertEqual(mc.check(margin_text(*MB, claim=True)), F(3, 2))
+        self.assertEqual(mc.psd_verdict(MB_TEXT), "PD")  # lambda = 3/2 > 0
+
+    def test_command_line_exit_codes(self):
+        with tempfile.TemporaryDirectory() as d:
+            good, bad = os.path.join(d, "good.json"), os.path.join(d, "bad.json")
+            with open(good, "w", encoding="utf-8") as fh:
+                fh.write(MB_TEXT)
+            with open(bad, "w", encoding="utf-8") as fh:
+                fh.write(margin_text(*MB[:4], MB[4] + 1))
+            ok = subprocess.run([sys.executable, "-B", MARGIN_PATH, good], capture_output=True, text=True)
+            self.assertEqual((ok.returncode, ok.stdout.strip()), (0, "lambda_min >= 3/2"))
+            no = subprocess.run([sys.executable, "-B", MARGIN_PATH, bad], capture_output=True, text=True)
+            self.assertEqual(no.returncode, 1)
+            self.assertIn("REJECT", no.stderr)
+            self.assertEqual(subprocess.run([sys.executable, "-B", MARGIN_PATH], capture_output=True).returncode, 1)
+
+
+def mstr_c(M):
+    """Real matrix of Fractions as a certificate matrix for inertia_cert.py (strings p/q)."""
+    return [[frac_s(x) for x in r] for r in M]
+
+
+# ---------------------------------------------------------------------------
 # Timing report (not part of the tests)
 # ---------------------------------------------------------------------------
 
@@ -962,5 +1698,10 @@ def report():
 if __name__ == "__main__":
     if "--report" in sys.argv:
         report()
+    elif "--stats" in sys.argv:  # run the suite quietly and print the counts the tests gathered
+        sys.argv.remove("--stats")
+        res = unittest.main(exit=False, verbosity=0).result
+        print(json.dumps(STATS, indent=1, sort_keys=True))
+        sys.exit(0 if res.wasSuccessful() else 1)
     else:
         unittest.main()
