@@ -1234,6 +1234,19 @@ class TestSharpRankBound(unittest.TestCase):
 
     def test_a_witness_that_is_not_psd_must_fail(self):
         self.assertRaises(BoundError, check_witness, [F(2), F(-1)], [F(0), F(0)], 0, 1)
+        # Only the PSD guard refuses this pair: rank 2, b = 1, u = 1, t = 2, S = 9/2, so R_opt = 2 and
+        # the sharp value equals the rank. Without the guard it would pass as a witness.
+        Pd, Qd = [F(2), F(-1)], [F(-1, 2), F(5, 2)]
+        self.assertEqual(ropt(F(1), F(2), F(9, 2), 1), F(2))
+        with self.assertRaisesRegex(BoundError, "not positive semidefinite"):
+            check_witness(Pd, Qd, 1, 2)
+
+    def test_a_witness_of_the_wrong_rank_must_fail(self):
+        # P = diag(10, 1, 1) has rank 3, but its four numbers (u = 12, t = 0, S = 102, b = 0) give the
+        # sharp value 2. Only the rank guard refuses the claim that this pair is a rank-2 witness.
+        self.assertEqual(max(1, math.ceil(ropt(F(12), F(0), F(102), 0))), 2)
+        with self.assertRaisesRegex(BoundError, "rank of P is 3, not 2"):
+            check_witness([F(10), F(1), F(1)], [F(0)] * 3, 0, 2)
 
     def test_the_formula_is_the_supremum_over_scale_and_weight(self):
         # The scaled family bound for the pair (sP, sQ) with weight C >= 1 is

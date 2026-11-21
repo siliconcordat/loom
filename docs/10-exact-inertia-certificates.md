@@ -3,7 +3,8 @@
 This paper describes a way to decide, with no floating-point eigenvalues and no threshold, whether a symmetric or Hermitian matrix is positive semidefinite, or has at most `b` positive eigenvalues. An untrusted program supplies a factorization.
 A short checker multiplies it out in exact fractions and reads the answer from the factors. The checker is [`scripts/inertia_cert.py`](../scripts/inertia_cert.py). Every number below tagged `verified` can be rerun with [`scripts/verify_inertia.py`](../scripts/verify_inertia.py).
 
-The paper also gives a family of lower bounds on the rank of a positive semidefinite part of a matrix, with its sharp form. It adds a margin form of the certificate. It applies the certificate to two cases, a two-bar truss and a low-rank weight adapter, and extends the truss case to whole parameter boxes. Statuses follow the Evidence Discipline in the `README`:
+The paper also gives a family of lower bounds on the rank of a positive semidefinite part of a matrix, with its sharp form. It adds a margin form of the certificate. It applies the certificate to two cases, a two-bar truss and a low-rank weight adapter, and extends the truss case to whole parameter boxes. Statuses follow the Evidence Discipline in the `README`.
+
 `verified` means a rerunnable command and its output or a proof given here, `hypothesis` means a proposed mechanism with a test and a kill condition stated in advance, `source claim` means a statement taken from an outside source and not reproduced here.
 
 ## 1. The Problem in Plain Words
@@ -84,7 +85,7 @@ The checker imports `inertia_cert.py` for its parser, its errors and its `need` 
 
 **Fact 1, the floor.** If the factorization holds, every eigenvalue of `M` is at least `lambda`, for either sign of `lambda`. Take any `x`, put `z = P x` and `y = L^T z`. Then `x^T M x - lambda |x|^2 = sum_k d_k y_k^2 >= 0`. Apply it to a unit eigenvector of the smallest eigenvalue.
 
-`L` is invertible, so `det(M - lambda I)` is the product of the `d_k`. The number of zero pivots equals the multiplicity of `lambda` as an eigenvalue of `M`. The floor is attained exactly when some pivot is zero. The suite checks both statements on 300 fresh certificates, with the independent inertia method and with the checker of section 2.1.
+`P` and `L` are invertible, so `M - lambda I` is congruent to `D`. By Sylvester's law of inertia, the number of zero pivots equals the multiplicity of `lambda` as an eigenvalue of `M`. The floor is attained exactly when some pivot is zero. The suite checks both statements on 300 fresh certificates, with the independent inertia method and with the checker of section 2.1.
 
 **Fact 2, the margin.** For every real symmetric `E`, the smallest eigenvalue of `M + E` is at least `lambda` plus the smallest eigenvalue of `E`. This is Weyl's inequality for one eigenvalue. So `M + E` is PSD when `E + lambda I` has its own certificate `L' D' L'^T` with `D' >= 0`. That is a margin certificate for `E` with `-lambda` in the place of `lambda`.
 
@@ -96,9 +97,13 @@ The checker imports `inertia_cert.py` for its parser, its errors and its `need` 
 
 **Pencils.** Let `K = B^T W B` and `G = B^T B`, and suppose `K - lambda G = L D L^T` with `D >= 0`. Then `y^T W y >= lambda |y|^2` for every `y` in the column space of `B`. A change `E` of `W` is covered at size `lambda`, since `y^T (W + E) y >= (lambda + lambda_min(E)) |y|^2`. A change `E'` of the reduced matrix `K` is covered only down to `-lambda g`, where `G - g I` is certified PSD and `lambda >= 0`.
 
-The one-dimensional example `B = [1/2]`, `W = [1]` shows the gap. Here `K = G = 1/4`, and `lambda = 1` is certified with a zero pivot. The change `E' = -1/2` has size at most `lambda`, yet `K + E'` is negative. With `g = 1/4` the covered size is `1/4`. The suite runs this example. `margin_cert.py` reads only the case `G = I`. The pencil statements are proved here, and an outside audit also tested them on 300 random pencils.
+The one-dimensional example `B = [1/2]`, `W = [1]` shows the gap. Here `K = G = 1/4`, and `lambda = 1` is certified with a zero pivot. The change `E' = -1/2` has size at most `lambda`, yet `K + E'` is negative. With `g = 1/4` the covered size is `1/4`.
 
-**Sources.** These facts are known. Peyrl and Parrilo, Theoretical Computer Science 409 (2008), give the exact `L D L^T` test with non-negative `D` (Theorem 6) and the Frobenius margin (Proposition 8). Rump, BIT 46 (2006), shifts the factorization by a constant to prove definiteness for every matrix within a radius (Corollaries 2.4 and 2.7), in floating point. This repository adds the small exact checker and its controls.
+The suite runs this example. `margin_cert.py` reads only the case `G = I`. The pencil statements are proved here, and a separate audit of ours also tested them on 300 random pencils.
+
+**Sources.** These facts are known. Peyrl and Parrilo, Theoretical Computer Science 409 (2008), give the exact `L D L^T` test with non-negative `D` (Theorem 6) and the Frobenius margin (Proposition 8).
+
+Rump, BIT 46 (2006), shifts the factorization by a constant to prove definiteness for every matrix within a radius (Corollaries 2.4 and 2.7), in floating point. This repository adds the small exact checker and its controls.
 
 **Limits.** The checker is real only. The facts hold for Hermitian matrices with the conjugate transpose, and that is not tested here. The suite uses sizes 1 to 6.
 
@@ -148,9 +153,9 @@ The total is at most `(1 + c/2)^2 b + r`. Moving `(1 + c/2)^2 b` to the left giv
 
 **(B), `c = 2`.** `r >= 2 tr P1 + 4 tr Q - 4b - ||M||^2`. Check: at `c = 2` the family gives `2 tr M - ||M||^2 + 2 t - 4b`, and `2 tr M + 2 t = 2 tr P1 + 4 t`.
 
-**Sources.** (B) is Lemma 3.2 of Alpoge and Furman, arXiv:2608.13637v2. The one-parameter family of section 3.2 is the family of Knausgard, arXiv:2610.08965v1, Lemma 6.1. His parameter `t` is our weight `1 + c/2`. Remark 3.3 of Alpoge and Furman notes that optimising the coefficient at `Q = 0` recovers the classical bound `(tr P)^2 / |P|^2`.
+**Sources.** (B) is Lemma 3.2 of Alpoge and Furman, arXiv:2608.13637v2. The one-parameter family of section 3.2 is the family of Knausgard, arXiv:2610.08965v1, Lemma 6.1, taken at his level 1 (his own `c`, not ours). His parameter `t` is our weight `1 + c/2`, and his `p` is our `b`. Remark 3.3 of Alpoge and Furman notes that optimising the coefficient at `Q = 0` recovers the classical bound `(tr P)^2 / |P|^2`.
 
-This document first proved the family without those papers. An outside check later read Alpoge and Furman in full. Its second pass matched Knausgard's Lemma 6.1 to our family symbol by symbol. The attribution is a `source claim`. The proof given here is `verified` (by proof and by the exact tests in section 3.6).
+This document first proved the family without those papers. Our outside check of the sibling team's work (section 3.7) later read Alpoge and Furman in full. Its second pass matched Knausgard's Lemma 6.1 to our family symbol by symbol. The attribution is a `source claim`. The proof given here is `verified` (by proof and by the exact tests in section 3.6).
 
 **The family and its best member.** The family is known, so we claim nothing new for it. Rescaling `(P1, Q)` to `(s P1, s Q)` with `s > 0` keeps the rank `r` and the count `b`. So the family holds at every scale `s`. Section 3.7 gives the joint optimum over the scale and the weight.
 
@@ -220,7 +225,7 @@ The first step holds because compressing cannot raise rank. The second holds bec
 
 **Exact tests.** The suite draws 600 fresh random exact matrices, with seed 20261201. Sizes run from 1 to 5 and about half are complex. `Q` is built on an exactly orthogonal basis, so its positive eigenspace is known exactly. This repository's checker reads `b`, and the count `n_+` of the compression, from certificates it accepted.
 
-For all 600, `R_opt` is at least (A), (B), the family at seven weights and the best member. It never exceeds `n_+` of the compression. That count never exceeds the exact rank of `P1`. There were no violations. The three cases of `R_opt` were reached 207, 10 and 383 times. On 179 matrices `R_opt` is strictly above the best member of section 3.3.
+For all 600, `R_opt` is at least (A), (B), the family at seven weights and the best member. It never exceeds `n_+` of the compression. That count never exceeds the exact rank of `P1`. There were no violations. The three cases of `R_opt` were reached 207, 10 and 383 times. On 179 matrices `R_opt` is positive and strictly above the best member of section 3.3.
 
 Two null controls must fail. With `b` declared one too small, the check refused 112 of 490 tries because `R_opt` rose above the true count. Another 33 were refused earlier, as numbers no pair could have. With `R_opt` replaced by zero, the family check refused 38 matrices.
 
@@ -239,9 +244,13 @@ At `r t = b u` both apply. To reach a larger `S`, add a coordinate with `P1 = 0`
 
 The suite holds 15 such tuples, with rank 1 to 4 and `b` from 0 to 3. They cover both constructions, the larger-`S` lift, and the boundary `r t = b u` built both ways. Three more tuples cover the zero case, where the answer is rank 1. For each tuple the check builds the pair, reads the rank and `b` exactly, and compares `max(1, ceil(R_opt))` with the claimed rank.
 
-Two must-fail controls run on every witness. A request for one rank lower than the sharp value is refused. A declared `b` one too small is refused. A lift that pushes `S` too far is refused as well. The outside check built witnesses for 1,102 tuples over square-root extensions of the rationals. This suite lists only tuples with rational witnesses.
+Two must-fail controls run on every witness. A request for one rank lower than the sharp value is refused. A declared `b` one too small is refused. A lift that pushes `S` too far is refused as well. So is a pair whose `P1` is not PSD, and a pair whose `P1` has a rank other than the one claimed, each by a control that only that guard refuses.
 
-**What remains of our own bound.** It is never stronger than `R_opt`, because it is the member `s = 1`. It is an independent proof route, by Weyl's inequalities and a quadratic, with no compression. It is affine in the three traces `tr P1`, `tr Q` and `||M||^2`, and `R_opt` is not. On 420 matrices of the outside check, `R_opt` was above our best member in 417 and equal in 3. Our best member was positive in only 15.
+Our outside check built witnesses for 1,102 tuples over square-root extensions of the rationals. This suite lists only tuples with rational witnesses.
+
+**What remains of our own bound.** It is never stronger than `R_opt`, because it is the member `s = 1`. It is an independent proof route, by Weyl's inequalities and a quadratic, with no compression. Each member is affine in the three traces `tr P1`, `tr Q` and `||M||^2`, and `R_opt` is not.
+
+The sibling team tested `R_opt` on 420 matrices, which our outside check regenerated. `R_opt` was above our best member in 417 and equal in 3. Our best member was positive in only 15. As a whole-number bound on `n_+` of the compression, `R_opt` was larger in 202 of the 420. As a bound on the rank of `P1`, it beat our best member together with the trivial bound 1 in 7.
 
 ## 4. First Use: Two-Bar Truss Over a Length Box
 
@@ -279,23 +288,25 @@ The suite checks this arithmetic. It does not claim that no positive definite eq
 
 ### 4.4 Branches and Boxes
 
-**Which equilibrium.** Below the line `L1 + L2 = 2`, the only equilibrium between the pins is on the pin line. Above it, a second equilibrium appears off the line. On the stable branch the inertia is positive definite on both sides of the line and singular on it. The change of inertia happens on the other branch. The on-line equilibrium goes from `(2, 0, 0)` through `(1, 0, 1)` to `(1, 1, 0)` as `L1 + L2` passes 2.
+**Which equilibrium.** Below the line `L1 + L2 = 2`, the only equilibrium between the pins is on the pin line. Above it, a mirror-image pair of equilibria appears off the pin line.
+
+On the stable branch the inertia is positive definite on both sides of the line and singular on it. The change of inertia happens on the other branch. The on-line equilibrium goes from `(2, 0, 0)` through `(1, 0, 1)` to `(1, 1, 0)` as `L1 + L2` passes 2.
 
 The suite checks this at five length pairs on `L1 = 9/10`: `L2 = 1`, `L2 = 1.09`, `L2 = 1.1`, `L2 = 1.11` and `L2 = 1.2`. The table in section 4.2 is unchanged. Its interior row is the on-line equilibrium on the line, where it is the only one between the pins.
 
-**A box needs more than a point.** A pointwise certificate cannot cover a region. Section 4.3 covers a box only when the matrix is affine in the parameters. The sibling team's box certifier (Foundation-0/gravity draft pull request 30 and Foundation-0/spectral-inertia) covers non-affine families. It extends the positive-definite criterion of Skalna (arXiv:1709.00853) to any inertia.
+**A box needs more than a point.** A pointwise certificate cannot cover a region. Section 4.3 covers a box only when the matrix is affine in the parameters. The sibling team has a box certifier for non-affine families in two versions. The first, in Foundation-0/gravity draft pull request 30, takes real symmetric matrices. The second, in Foundation-0/spectral-inertia, also takes Hermitian ones.
 
-The method has two steps. First, an exact congruence `C M(m) C* = D` at the midpoint `m` of the box, with `D` block diagonal and no zero eigenvalue. Second, an exact interval enclosure of the change `E(x) = C (M(x) - M(m)) C*` over the box.
+Both extend the positive-definite criterion of Skalna (arXiv:1709.00853) to any inertia. The method has two steps. First, an exact congruence `C M(m) C* = D` at the midpoint `m` of the box, with no zero pivot in `D`. Second, an exact interval enclosure of the change `E(x) = C (M(x) - M(m)) C*` over the box.
 
-Suppose that for every block of `D`, its smallest singular value exceeds the sum of the Frobenius bounds of the matching block row of `E`. Then `M(x)` is nonsingular on the whole box. Eigenvalues vary continuously and the box is connected, so the inertia is the inertia of `D` everywhere in it.
+In the first version `D` is diagonal. Suppose each `|d_i|` exceeds the sum over row `i` of the enclosure's upper bounds on `|E_ij|`. This is strict diagonal dominance, so `M(x)` is nonsingular on the whole box. Eigenvalues vary continuously and the box is connected, so the inertia is the inertia of `D` everywhere in it.
+
+The second version keeps `1 x 1` and `2 x 2` blocks in `D`. It compares the smallest singular value of each block with the sum of Frobenius bounds on the matching block row of `E`.
 
 The conditions are three. The matrix is symmetric (Hermitian in the complex case) and continuous in the parameters. The interval extension is sound, meaning the enclosure contains every value. The caller chooses the equilibrium branch, because the certifier speaks about one matrix family and not about which equilibrium is stable.
 
-It certifies only nonsingular inertias, so a box that crosses the singular line is refused.
+Our outside check tested the first version. It found it sound on 2,795 certified boxes and 22,360 exact sample points, with no contradiction. The certified inertias included indefinite ones. None of 291 boxes with an inertia change was certified. The check did not test the second version.
 
-Our outside check found it sound on 2,795 certified boxes and 22,360 exact sample points, with no contradiction. The certified inertias included indefinite ones. None of 291 boxes with an inertia change was certified. None of 298 boxes that straddle `L1 + L2 = 2` was certified.
-
-It reproduces the singular line of this truss example. The caller supplies the line and the certifier does not find it. We did not rerun that certifier in this suite.
+On this truss the first version certifies positive definite boxes on both sides of the line `L1 + L2 = 2`. It refuses every box that meets the line, and none of 298 such boxes was certified. That refusal is built in, because the caller supplies the line. The certifier does not find it. We did not rerun either version in this suite.
 
 ## 5. Second Use: A Spectral Bound on a Low-Rank Weight Adapter
 
@@ -358,7 +369,7 @@ The hypothesis fails if a loader that recomputes `Q(s)` from the weights it serv
 
 ## 6. First Uses Outside This Repository
 
-The checker has been proposed for matrices from other drafts. These are the 16 by 16 and 24 by 24 rational matrices of the Barnes-Wall and Leech arc certificates, and the stiffness matrices of the fold study (Foundation-0/incentre-lattices draft pull requests 106 and 107). Their sizes are under 64 and their entries are rational, so they are within the checker's limits.
+The checker has been proposed for matrices from other drafts. These are the 16 by 16 and 24 by 24 rational matrices of the Barnes-Wall and Leech arc certificates, and the stiffness matrices of the fold study (Foundation-0/incentre-lattices draft pull requests 106 and 107). Their sizes are under 64. Apart from the E_8 path below, their entries are rational, so they are within the checker's limits.
 
 We have not run the checker on them in this change. One gap is known. Points on the E_8 path have entries in `Q(sqrt 2)`, the rationals with `sqrt 2` adjoined. The checker does not read such entries.
 
@@ -369,8 +380,8 @@ We have not run the checker on them in this change. One gap is known. Points on 
 - Cost grows with rank in pure fractions. From rank 16 to rank 32 in the table, checking time grows about twelve-fold and the certificate about six-fold, because the numerators and denominators grow. The checker also refuses sizes above 64.
 - A second, independent certificate checker now exists: the dual-oracle checker in Foundation-0/spectral-inertia. It shares no code with ours. Our outside check ran both on 400 fresh matrices and 800 tampered certificates. There was no disagreement, and each checker rejects the other's must-fail inputs. The matrices included singular ones, zero diagonals, repeated eigenvalues and entries near 10^12.
 - The two checkers do not read each other's certificates as written. Theirs requires lowest-terms strings and rejects a denominator of 1, so `"1/1"` and `"0/1"` fail. Ours requires the `p/q` form and rejects a bare integer. The agreement above was found after converting the strings.
-- A common format would fix one spelling. Every entry would be a lowest-terms fraction, and both checkers would accept an integer entry as `"p"` and as `"p/1"`, reading them as equal. No converter is part of this change. We keep both checkers.
-- Size and speed, on one machine. Their full dual check did not finish a matrix of size 64 in about 11 minutes. At size 48 it took 109 s against 1.7 s for ours. Their congruence oracle alone took 0.78 s at size 64 against 4.0 s for ours, so it is 4 to 6 times faster there. The two sets of figures come from the two passes of the check.
+- A common format would give each rational one spelling: a string `p/q` in lowest terms with `q >= 1`, so an integer is written `p/1`. Ours reads that form now. Theirs would need to accept a denominator of 1, which our check found to be a one-line change. No converter is part of this change. We keep both checkers.
+- Size and speed, on one machine. Their full dual check adds a second, independent oracle that ours does not have. With it, a matrix of size 64 did not finish in about 11 minutes. That second oracle is the slow part. Their congruence oracle alone is five to six times faster than our checker: 0.29 s against 1.66 s at size 48, and 0.78 s against 4.0 s at size 64.
 - The suite's independent method computes inertia by a different route. It is a cross-check on inputs and does not check certificates.
 - `margin_cert.py` is real only, and the box certifier of section 4.4 was not rerun here.
 - A matrix rounded from floating point certifies the rounded matrix. The step from real weights to exact rationals is the caller's.
@@ -382,7 +393,7 @@ We have not run the checker on them in this change. One gap is known. Points on 
 - The central soundness claim fails if any certificate the checker accepts has an `M` whose inertia, computed by a different exact method, differs from the checker's output. The property test and the guard-removal controls in `scripts/verify_inertia.py` look for exactly this.
 - A rank bound fails if any exact instance has `r` below the right side. One such instance would also show an error in section 3.
 - The usefulness claim for adapters fails if exact checking at the ranks a deployment uses cannot finish inside the loader's time and storage budget. The `--report` table is the measurement to repeat on the target machine. A budget the loader owner sets and a measured time above it count as a negative result.
-- The sharpness claim fails if some tuple `(u, t, S, b)` with `u > 0` is realised by a pair whose `P1` has rank below `max(1, ceil(R_opt))`. The chain in section 3.7 says that cannot happen.
+- The lower half of the sharpness claim fails if some pair with `u > 0` has a `P1` of rank below `max(1, ceil(R_opt))`. The chain in section 3.7 says that cannot happen. The upper half fails if some realisable tuple `(u, t, S, b)` with `u > 0` has no realising pair whose `P1` has exactly that rank.
 - A margin certificate fails if a certificate that `margin_cert.py` accepts has an `M` with an eigenvalue below its `lambda`. The independent method in the suite looks for exactly this.
 - The truss claim about corners fails if an affine family has positive definite corners and an interior point that is not PSD. The proof in section 4.3 says that cannot happen.
 
@@ -397,7 +408,7 @@ We have not run the checker on them in this change. One gap is known. Points on 
 | `R_opt` is at least every family member and at most `n_+` of the compression | `verified` (600 random exact matrices, null controls), the proof of the last step is a `source claim` |
 | Sharpness: smallest rank of `P1` is `max(1, ceil(R_opt))` | `verified` for the listed witnesses, the general theorem is a `source claim` with no written proof yet |
 | Margin certificates, floor and one-sided margin | `verified` (proof, 300 random certificates, 16 guard mutants), known results |
-| The box certifier is sound and reproduces the singular line | `source claim`, found sound by an outside check and not rerun here |
+| The box certifier (real version) is sound and refuses every box that meets the truss line | `source claim`, found sound by our outside check and not rerun here, the Hermitian version untested |
 | A second checker agrees with ours | `source claim`, found by an outside check and not rerun here |
 | The Barnes-Wall, Leech and fold matrices fit the checker | `hypothesis`, it fails if the checker rejects them or cannot finish |
 | (B) as a statement | `verified` (proof here, exact tests) |

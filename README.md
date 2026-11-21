@@ -32,7 +32,7 @@ This repository holds research, mathematical proofs, roofline arithmetic, and an
 | [`scripts/verify_lattice.py`](scripts/verify_lattice.py) | Standard-library `unittest` and rollout suite checking `docs/07` (shared-token isolation, `RMSNorm` bleed, KV re-poisoning, `L_0` decay, FiLM packing, L1 rooflines) | Passing (4/4) |
 | [`scripts/inertia_cert.py`](scripts/inertia_cert.py) | Standard-library exact checker for inertia certificates, used by the suite below | Verified by `scripts/verify_inertia.py` |
 | [`scripts/margin_cert.py`](scripts/margin_cert.py) | Standard-library exact checker for margin certificates (a floor on the smallest eigenvalue), built on `inertia_cert.py` | Verified by `scripts/verify_inertia.py` |
-| [`scripts/verify_inertia.py`](scripts/verify_inertia.py) | Standard-library `unittest` suite checking `docs/10` (property test, must-fail controls, rank bounds and their sharp form, margin certificates, truss matrices and branches, adapter forgery) | Passing (52/52) |
+| [`scripts/verify_inertia.py`](scripts/verify_inertia.py) | Standard-library `unittest` suite checking `docs/10` (property test, must-fail controls, rank bounds and their sharp form, margin certificates, truss matrices and branches, adapter forgery) | Passing (53/53) |
 
 ## Check the Math
 
