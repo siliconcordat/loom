@@ -797,15 +797,16 @@ def check_helps_rule(Phi, r0, a, b, rule=helps_rule, reading=lambda e_b, x: e_b 
     return x, actual
 
 
-def check_several_anchors(Phi, r0, anchors, form=None):
-    """Several anchors at once: all read zero, and the squared residual rises by e^T (A^T P A)^-1 e."""
+def check_several_anchors(Phi, r0, anchors, form=None, coefficients=None):
+    """Several anchors at once: all read zero, and the squared residual rises by e^T (A^T P A)^-1 e.
+    The change is P A s with (A^T P A) s = e. A control may pass other coefficients s."""
     r_star = outside_part(r0, Phi)
     P_anchors = [project(Phi, a) for a in anchors]
     M = [[dot(a, pa) for pa in P_anchors] for a in anchors]
     e = [dot(a, r_star) for a in anchors]
     if form is None:
         form = lambda M_, e_: dot(e_, solve(M_, e_))
-    s = solve(M, e)
+    s = solve(M, e) if coefficients is None else coefficients(M, e)
     shift = [sum(c * pa[i] for c, pa in zip(s, P_anchors)) for i in range(len(r_star))]
     r_ad = sub(r_star, shift)
     require(all(dot(a, r_ad) == 0 for a in anchors), "an absorbed anchor does not read zero")
@@ -985,6 +986,12 @@ class TestAnchorAbsorption(unittest.TestCase):
         self.assertTrue(goes_red(check_silencing, Phi, r0, a, scale(e / pp, p), lambda e_, pp_: 2 * e_ * e_ / pp_))
         self.assertTrue(goes_red(check_silencing, Phi, r0, a, scale(e / dot(a, a), a)))     # outside the column space
         self.assertTrue(goes_red(check_silencing, Phi, r0, a, [F(0)] * 5))                  # silences nothing
+        # Two controls that each only one guard can catch. The first change silences a and costs more than the law,
+        # but leaves the column space. The second is a real adaptation, checked against an inflated claimed law.
+        u = [F(0), F(0), F(0), F(2), F(1)]                                                  # orthogonal to a and to r_ad
+        self.assertTrue(goes_red(check_silencing, Phi, r0, a, add(scale(e / pp, p), u)))
+        x1 = [F(1), F(0), F(0), F(0), F(0)]
+        self.assertTrue(goes_red(check_silencing, Phi, r0, a, scale(e / dot(a, x1), x1), lambda e_, pp_: 100 * e_ * e_ / pp_))
         # A change that is not an adaptation moves the outside part, so the check of the outside part goes red.
         moved = sub(r_star, scale(e / dot(a, a), a))
         fresh = [[F(1), F(0), F(1), F(0), F(0)], [F(0), F(0), F(2), F(1), F(0)]]
@@ -997,6 +1004,13 @@ class TestAnchorAbsorption(unittest.TestCase):
         self.assertTrue(old_falsifier_fires(r_star, moved, same))                          # so the next control fails on the outside part
         self.assertTrue(goes_red(check_old_falsifier_misfires, Phi, r_star, r_star, same))
         self.assertTrue(goes_red(check_old_falsifier_misfires, Phi, r_star, moved, same))
+        # Readings fall and the outside part is unchanged, but the total residual fell: not an absorption.
+        same2 = [[F(1), F(1), F(1), F(0), F(0)], [F(1), F(1), F(3, 4), F(0), F(0)], [F(2), F(2), F(1), F(0), F(0)]]
+        r_hi = add(r_star, [F(3), F(-3), F(0), F(0), F(0)])
+        r_lo = add(r_star, [F(-1, 2), F(-1, 2), F(0), F(0), F(0)])
+        self.assertTrue(old_falsifier_fires(r_hi, r_lo, same2))
+        check_outside_unchanged(Phi, r_hi, r_lo, same2)                                    # so only the total can catch it
+        self.assertTrue(goes_red(check_old_falsifier_misfires, Phi, r_hi, r_lo, same2))
         # The x rule: the old label at the ties and a wrong upper bound both go red.
         b_help = [F(1), F(0), F(2), F(0), F(0)]
         tie0 = sub(b_help, scale(dot(p, b_help) / pp, p))
@@ -1013,6 +1027,9 @@ class TestAnchorAbsorption(unittest.TestCase):
         check_several_anchors(Phi, r0, two)                                                 # control
         self.assertTrue(goes_red(check_several_anchors, Phi, r0, two, lambda M, e_: dot(e_, mv(M, e_))))
         self.assertTrue(goes_red(check_several_anchors, Phi, r0, two, lambda M, e_: sum(x * x for x in e_)))
+        # The sign-flipped change costs the same, so only the check that every anchor reads zero can catch it.
+        flipped = lambda M, e_: [-x for x in solve(M, e_)]
+        self.assertTrue(goes_red(check_several_anchors, Phi, r0, two, None, flipped))
         # Revision.
         Psi = [[F(0)], [F(0)], [F(1)], [F(0)], [F(0)]]
         check_revision(Phi, Psi, r0)                                                        # control
