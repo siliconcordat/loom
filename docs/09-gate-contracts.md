@@ -252,7 +252,7 @@ As a claim about real loops it stays a hypothesis. In the linear model of Sectio
 
 **Status in the linear model (`verified`).** Let `a` be a failed anchor, so it reads `e = a . r*`, and let `P a`, its part in the column space, be not zero. To absorb `a` is to change the output inside the column space as little as possible so that `a` reads zero. That gives `r_adapt = r* - (e / |P a|^2) P a`. The script checks each statement below on fresh exact rational instances with logged seeds, rank-deficient `Phi` included.
 
-- **Cost.** `|r_adapt|^2 = |r*|^2 + e^2 / |P a|^2`. This is the textbook restricted least squares formula for one restriction (`source claim`: Greene, Econometric Analysis, restricted least squares). Any other change inside the column space that silences `a` costs more.
+- **Cost.** `|r_adapt|^2 = |r*|^2 + e^2 / |P a|^2`. This is the restricted least squares formula for one restriction, a standard result of regression texts. Only the name is taken from the literature: the statement is proved below and checked in the suite. Any other change inside the column space that silences `a` costs more.
 - **A fresh anchor.** Take `b` with `e_b = b . r*` not zero. After absorbing, `b` reads `e_b (1 - x)`, where `x = e (P a . b) / (e_b |P a|^2)`. So absorbing helps on `b` exactly when `0 < x < 2`. It hurts when `x < 0` or `x > 2`. At `x = 0` and `x = 2` the size of the reading is unchanged.
 - **Several anchors.** Let the anchors be the columns of `A`, let `e = A^T r*`, and let `A^T P A` be invertible. Silencing all of them costs `e^T (A^T P A)^-1 e`.
 - **Revising.** Adding a direction to the specification never raises the total residual in the noiseless model. The new total is `|r*|^2` minus the squared part of `r*` inside the span of the new directions after `I - P` is applied to them. A revision whose span contains `r*` makes every anchor read zero.
@@ -491,7 +491,7 @@ No statement in this document is claimed as new. The parts are known under these
 - Signing only what was measured: measured boot and remote attestation (Trusted Computing Group), and build provenance written by the build platform and not by its tenant (SLSA).
 - No floats inside hashed JSON: the JSON Canonicalization Scheme, RFC 8785, pins one number format, and the Matrix specification forbids floats in canonical JSON.
 - Residuals orthogonal to the regressors, and tests for misspecification built from them: least squares, and the specification tests of Ramsey (1969).
-- The cost of one linear restriction on a least-squares fit: restricted least squares, in econometrics texts such as Greene, Econometric Analysis.
+- The cost of one linear restriction on a least-squares fit: restricted least squares, a standard topic of econometrics texts. Our check read the formula in a set of university lecture notes and matched it symbol by symbol. No textbook was read for it.
 - Reuse of held-out data: adaptive data analysis (Dwork, Feldman, Hardt, Pitassi, Reingold and Roth, 2015).
 - Quotients of a chain that keep the dynamics: lumpability (Kemeny and Snell, 1960).
 
