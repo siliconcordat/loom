@@ -11,10 +11,12 @@ All arithmetic that the document calls exact is done with fractions.Fraction.
 """
 
 import contextlib
+import decimal
 import hashlib
 import io
 import itertools
 import json
+import math
 import os
 import random
 import struct
@@ -1449,6 +1451,761 @@ class TestQuotedNumbers(unittest.TestCase):
         self.assertEqual(sum(F(k / 1000) > F(k, 1000) for k in range(1, 1001)), 499)
 
 
+# ======================================================================================
+# Part 6. A worked case in physics: decimation of the Ising model (docs/09 section 7.7)
+# ======================================================================================
+# Spins of +1 or -1 on the sites of a graph, coupling K > 0, y = e^K. Sites are split into a
+# kept set A and a summed-out set B with no edge inside B. The weight of a configuration a of A is
+# W(a) = sum over configurations of B of y^(sum over edges of the product of the two spins).
+# All weights below are exact Fractions at rational y, or Laurent polynomials in y.
+SEED_DECIM = 20261124
+DECIM_COUPLINGS = (F(2), F(3, 2), F(5, 3))                     # y = e^K, so K = ln y > 0
+
+
+def decim_weight_product(sums, y):
+    """W as the product over summed-out sites of y^s + y^-s, where s is the sum of the neighbour spins."""
+    w = F(1)
+    for s in sums:
+        w *= y ** s + y ** (-s)
+    return w
+
+
+def decim_weight_brute(edges, a, nb, y):
+    """W straight from the definition: sum over every configuration of the summed-out sites.
+    edges: pairs (b, site of A) with b in range(nb). Each edge has one end in B and one in A."""
+    counts = {}
+    for sb in itertools.product((1, -1), repeat=nb):
+        e = sum(sb[b] * a[i] for b, i in edges)
+        counts[e] = counts.get(e, 0) + 1
+    return sum(c * y ** e for e, c in counts.items())
+
+
+# ---- the ring: 2N sites, A the even ones, B the odd ones --------------------------------
+def ring_edges(n):
+    """b is between a[b] and a[(b+1) % n]."""
+    return [(b, b) for b in range(n)] + [(b, (b + 1) % n) for b in range(n)]
+
+
+def ring_nn(a):
+    return sum(a[i] * a[(i + 1) % len(a)] for i in range(len(a)))
+
+
+def ring_sums(a):
+    return [a[b] + a[(b + 1) % len(a)] for b in range(len(a))]
+
+
+def check_ring_has_no_fork(n, spec, weight, couplings=DECIM_COUPLINGS):
+    """Group the 2^n coarse configurations by the value of spec and require one weight per group.
+    Returns the number of classes."""
+    classes = {}
+    for a in itertools.product((1, -1), repeat=n):
+        classes.setdefault(spec(a), []).append(a)
+    for y in couplings:
+        for key, members in classes.items():
+            ws = {weight(a, y) for a in members}
+            require(len(ws) == 1, "fork on the ring: size %d, class %r, y = %s" % (n, key, y))
+    return len(classes)
+
+
+def ring_weight_brute(a, y):
+    return decim_weight_brute(ring_edges(len(a)), a, len(a), y)
+
+
+def check_ring_closed_form(n, y, shift=0):
+    """W = 2^n * cosh(2K)^(number of aligned coarse bonds), so W depends on the nn sum alone."""
+    c2 = (y * y + 1 / (y * y)) / 2
+    for a in itertools.product((1, -1), repeat=n):
+        aligned = (n + ring_nn(a)) // 2 + shift
+        require(ring_weight_brute(a, y) == 2 ** n * c2 ** aligned, "ring closed form fails")
+
+
+def run_ring_census(sizes=(3, 4, 5, 6, 7), couplings=DECIM_COUPLINGS):
+    out = {"sizes": sizes, "couplings": [str(y) for y in couplings], "classes": {}}
+    for n in sizes:
+        out["classes"][n] = check_ring_has_no_fork(n, ring_nn, ring_weight_brute, couplings)
+        check_ring_closed_form(n, couplings[0])
+    return out
+
+
+# ---- the torus: Lx by Ly sites, A where i + j is even, B where i + j is odd --------------
+def torus_b_sites(lx, ly):
+    return [(i, j) for i in range(lx) for j in range(ly) if (i + j) % 2]
+
+
+def torus_a_sites(lx, ly):
+    return [(i, j) for i in range(lx) for j in range(ly) if (i + j) % 2 == 0]
+
+
+def torus_nbrs(b, lx, ly):
+    """The four neighbours of b in cyclic order east, north, west, south."""
+    i, j = b
+    return [((i + 1) % lx, j), (i, (j + 1) % ly), ((i - 1) % lx, j), (i, (j - 1) % ly)]
+
+
+def torus_all_ones(lx, ly):
+    return {s: 1 for s in torus_a_sites(lx, ly)}
+
+
+def torus_sums(a, lx, ly):
+    return [sum(a[s] for s in torus_nbrs(b, lx, ly)) for b in torus_b_sites(lx, ly)]
+
+
+def torus_weight(a, lx, ly, y):
+    return decim_weight_product(torus_sums(a, lx, ly), y)
+
+
+def torus_cyclic_pairs(a, lx, ly):
+    """The nearest-neighbour description: for each summed-out site the four products of cyclically
+    adjacent neighbours. A coarse nearest-neighbour bond lies next to two summed-out sites, so this
+    is twice the sum over distinct coarse bonds."""
+    t = 0
+    for b in torus_b_sites(lx, ly):
+        e, n_, w, s = (a[x] for x in torus_nbrs(b, lx, ly))
+        t += e * n_ + n_ * w + w * s + s * e
+    return t
+
+
+def torus_across_pairs(a, lx, ly):
+    t = 0
+    for b in torus_b_sites(lx, ly):
+        e, n_, w, s = (a[x] for x in torus_nbrs(b, lx, ly))
+        t += e * w + n_ * s
+    return t
+
+
+def torus_four_spin(a, lx, ly):
+    t = 0
+    for b in torus_b_sites(lx, ly):
+        e, n_, w, s = (a[x] for x in torus_nbrs(b, lx, ly))
+        t += e * n_ * w * s
+    return t
+
+
+def torus_spec_nn(a, lx, ly):
+    return (torus_cyclic_pairs(a, lx, ly),)
+
+
+def torus_spec_enlarged(a, lx, ly):
+    return (torus_cyclic_pairs(a, lx, ly), torus_across_pairs(a, lx, ly), torus_four_spin(a, lx, ly))
+
+
+def torus_spec_no_four_spin(a, lx, ly):
+    return (torus_cyclic_pairs(a, lx, ly), torus_across_pairs(a, lx, ly))
+
+
+def torus_classes(lx, ly, spec):
+    """All 2^|A| coarse configurations grouped by the value of spec."""
+    sites = torus_a_sites(lx, ly)
+    classes = {}
+    for vals in itertools.product((1, -1), repeat=len(sites)):
+        a = dict(zip(sites, vals))
+        classes.setdefault(spec(a, lx, ly), []).append(a)
+    return classes
+
+
+def torus_forking_classes(lx, ly, spec, weight=torus_weight, couplings=DECIM_COUPLINGS):
+    """Classes of spec with two different weights at some coupling in the list, and the class count."""
+    classes = torus_classes(lx, ly, spec)
+    bad = [key for key, members in classes.items()
+           if any(len({weight(a, lx, ly, y) for a in members}) > 1 for y in couplings)]
+    return bad, len(classes)
+
+
+def check_closes(lx, ly, spec, weight=torus_weight, couplings=DECIM_COUPLINGS):
+    bad, n = torus_forking_classes(lx, ly, spec, weight, couplings)
+    require(not bad, "%d of %d classes fork on the %dx%d torus" % (len(bad), n, lx, ly))
+    return n
+
+
+def check_torus_weight_formula(lx, ly, y, weight=torus_weight, seed=SEED_DECIM, count=24):
+    """The product formula against the definition, on seeded random coarse configurations."""
+    rng = random.Random(seed)
+    sites, bs = torus_a_sites(lx, ly), torus_b_sites(lx, ly)
+    index = {s: k for k, s in enumerate(sites)}
+    edges = [(m, index[x]) for m, b in enumerate(bs) for x in torus_nbrs(b, lx, ly)]
+    for _ in range(count):
+        a = {s: rng.choice((1, -1)) for s in sites}
+        brute = decim_weight_brute(edges, [a[s] for s in sites], len(bs), y)
+        require(brute == weight(a, lx, ly, y), "product formula differs from the definition")
+
+
+def torus_flipped(lx, ly, flips):
+    a = torus_all_ones(lx, ly)
+    for s in flips:
+        a[s] = -1
+    return a
+
+
+# The witness on a torus with both sides even and at least 6: two flipped sites that share no summed-out
+# neighbour, against three flipped sites at corners of one coarse plaquette (an L).
+WITNESS_TWO = ((0, 0), (3, 3))
+WITNESS_L = ((0, 0), (1, 1), (2, 0))
+
+
+def check_torus_fork(lx, ly, a1, a2, y):
+    """A claimed fork of the nearest-neighbour description: equal descriptions, different weights."""
+    require(torus_spec_nn(a1, lx, ly) == torus_spec_nn(a2, lx, ly), "the two configurations differ in the description")
+    require(torus_weight(a1, lx, ly, y) != torus_weight(a2, lx, ly, y), "the two weights are equal, so this is not a fork")
+
+
+def check_witness(lx, ly, y):
+    a1, a2 = torus_flipped(lx, ly, WITNESS_TWO), torus_flipped(lx, ly, WITNESS_L)
+    check_torus_fork(lx, ly, a1, a2, y)
+    c2 = (y * y + 1 / (y * y)) / 2
+    require(torus_weight(a1, lx, ly, y) / torus_weight(a2, lx, ly, y) == c2 ** 2, "the weight ratio is not cosh^2(2K)")
+    require(c2 ** 2 > 1, "ratio not above 1")
+    return torus_spec_nn(a1, lx, ly)[0]
+
+
+def signature(a, lx, ly):
+    """How many summed-out sites have |s| = 0, 2, 4."""
+    s = [abs(v) for v in torus_sums(a, lx, ly)]
+    return (s.count(0), s.count(2), s.count(4))
+
+
+def check_local_identity(y, q_shift=0):
+    """For every pattern of the four neighbours of a summed-out site, with c2 = cosh 2K and c4 = cosh 4K:
+    (2 cosh Ks)^8 = 256 c2^4 c4 * c4^P * (c4 / c2^4)^Q, where P is the sum of the six pair products and Q the product.
+    This is ln 2cosh(Ks) = alpha + beta P + gamma Q, raised to the eighth power so that it is exact in Fractions."""
+    c2, c4 = (y * y + 1 / (y * y)) / 2, (y ** 4 + 1 / y ** 4) / 2
+    for nb in itertools.product((1, -1), repeat=4):
+        s = sum(nb)
+        pairs = sum(nb[i] * nb[j] for i, j in itertools.combinations(range(4), 2))
+        q = nb[0] * nb[1] * nb[2] * nb[3]
+        require((y ** s + y ** (-s)) ** 8 == 256 * c2 ** 4 * c4 * c4 ** pairs * (c4 / c2 ** 4) ** (q + q_shift),
+                "local identity fails for neighbours %r" % (nb,))
+
+
+def run_torus_census(couplings=DECIM_COUPLINGS):
+    out = {"couplings": [str(y) for y in couplings]}
+    # the 4x4 torus by enumeration: nn description forks, enlarged description closes
+    bad, n = torus_forking_classes(4, 4, torus_spec_nn, couplings=couplings)
+    out["4x4_nn_classes"], out["4x4_nn_forking"] = n, len(bad)
+    # the two signatures behind that fork, in one class of the description, give a fork at every K by the product formula
+    members = torus_classes(4, 4, torus_spec_nn)[bad[0]]
+    sigs = {signature(a, 4, 4) for a in members}
+    require({(0, 8, 0), (4, 4, 0)} <= sigs, "the two signatures are not both present in the forking class")
+    out["4x4_signatures_in_forking_class"] = sorted(sigs)
+    out["4x4_enlarged_classes"] = check_closes(4, 4, torus_spec_enlarged, couplings=couplings)
+    out["4x4_without_four_spin_forking"] = len(torus_forking_classes(4, 4, torus_spec_no_four_spin, couplings=couplings)[0])
+    check_torus_weight_formula(4, 4, couplings[0])
+    for y in couplings:
+        check_local_identity(y)
+    # the witness at several sizes and couplings
+    out["witness_sizes"] = [(6, 6), (6, 8), (8, 6), (8, 8), (10, 10)]
+    for lx, ly in out["witness_sizes"]:
+        for y in couplings:
+            check_witness(lx, ly, y)
+    out["witness_nn_value"] = check_witness(6, 6, couplings[0])
+    return out
+
+
+# ---- the second step ---------------------------------------------------------------------
+# After the first step the weight on the coarse spins is the product over coarse faces F (the four corners
+# (u,v), (u+1,v), (u,v+1), (u+1,v+1)) of p^(P_F) * q^(Q_F). P_F is the sum of the six pair products in the face
+# and Q_F is the product of its four spins. On the K curve p^8 = cosh 4K and q^8 = cosh 4K / cosh^4 2K.
+# Two coarse sites interact when they share a face, so same-colour sites of a checkerboard interact and the
+# second step sums out the even-even quarter of the coarse sites. Each such site has 8 kept neighbours.
+BLOCK_NN = ((1, 0), (0, 1), (-1, 0), (0, -1))
+BLOCK_DIAG = ((1, 1), (-1, 1), (-1, -1), (1, -1))
+BLOCK_SITES = BLOCK_NN + BLOCK_DIAG
+BLOCK_FACES = [[BLOCK_SITES.index(c) for c in ((u0, v0), (u0 + 1, v0), (u0 + 1, v0 + 1), (u0, v0 + 1)) if c != (0, 0)]
+               for (u0, v0) in ((0, 0), (-1, 0), (0, -1), (-1, -1))]
+
+
+def block_exponents(pat):
+    """For one summed-out coarse site with neighbour pattern pat (8 spins): integers (kept, S, T) such that the
+    block factor is p^kept * (p^S q^T + p^-S q^-T). kept is the pair sum among kept spins over the four faces."""
+    kept = s = t = 0
+    for others in BLOCK_FACES:
+        x, y, z = (pat[i] for i in others)
+        kept += x * y + y * z + x * z
+        s += x + y + z
+        t += x * y * z
+    return kept, s, t
+
+
+def block_poly(pat):
+    kept, s, t = block_exponents(pat)
+    out = {}
+    for key in ((kept + s, t), (kept - s, -t)):
+        out[key] = out.get(key, 0) + 1                  # both terms coincide when S = T = 0
+    return out
+
+
+def poly_times(a, b):
+    out = {}
+    for (i, j), c in a.items():
+        for (k, m), d in b.items():
+            key = (i + k, j + m)
+            out[key] = out.get(key, 0) + c * d
+    return {k: v for k, v in out.items() if v}
+
+
+def block_group():
+    """The 16 maps of the 8 neighbour positions given by the rotations and reflections of the square, and the flip."""
+    def rot(s):
+        return (-s[1], s[0])
+
+    def refl(s):
+        return (s[0], -s[1])
+    maps = []
+    for r in range(4):
+        for f in range(2):
+            m = []
+            for s in BLOCK_SITES:
+                for _ in range(r):
+                    s = rot(s)
+                m.append(BLOCK_SITES.index(refl(s) if f else s))
+            maps.append(m)
+    return maps
+
+
+BLOCK_MAPS = block_group()
+BLOCK_PATTERNS = list(itertools.product((1, -1), repeat=8))
+
+
+def block_class_of(pat):
+    best = None
+    for m in BLOCK_MAPS:
+        moved = tuple(pat[m[i]] for i in range(8))
+        for cand in (moved, tuple(-v for v in moved)):
+            if best is None or cand < best:
+                best = cand
+    return best
+
+
+def block_orbit_of(subset):
+    return min(tuple(sorted(m[i] for i in subset)) for m in BLOCK_MAPS)
+
+
+def block_even_orbits():
+    orbits = {}
+    for r in range(0, 9, 2):
+        for sub in itertools.combinations(range(8), r):
+            orbits.setdefault(block_orbit_of(sub), []).append(sub)
+    return orbits
+
+
+def block_tables():
+    """Classes of block patterns, even orbits, and the integer table M[class][orbit] of orbit sums."""
+    classes = sorted({block_class_of(p) for p in BLOCK_PATTERNS})
+    orbits = sorted(block_even_orbits().items(), key=lambda kv: (len(kv[0]), kv[0]))
+    table = []
+    for c in classes:
+        row = []
+        for _, members in orbits:
+            row.append(sum(prod_of(c, sub) for sub in members))
+        table.append(row)
+    return classes, [o for o, _ in orbits], table
+
+
+def prod_of(pat, sub):
+    r = 1
+    for i in sub:
+        r *= pat[i]
+    return r
+
+
+def check_block_symmetry():
+    """The block exponents are unchanged by the square's symmetries up to the sign that the flip gives S and T."""
+    for pat in BLOCK_PATTERNS:
+        kept, s, t = block_exponents(pat)
+        flipped = block_exponents(tuple(-v for v in pat))
+        require(flipped == (kept, -s, -t), "the block factor is not flip symmetric")
+        for m in BLOCK_MAPS:
+            moved = block_exponents(tuple(pat[m[i]] for i in range(8)))
+            require(moved == (kept, s, t), "the block factor is not symmetric under the square's maps")
+    return len(BLOCK_PATTERNS)
+
+
+def check_invertible(table):
+    require(len(table) == len(table[0]) and rank(table) == len(table), "the orbit table is not invertible")
+
+
+def dual_vector(table, o):
+    """Integer vector of least size with orbit sums zero except orbit number o: the orbit sums are the table's
+    transpose applied to the histogram of classes."""
+    n = len(table)
+    transposed = [[F(table[c][k]) for c in range(n)] for k in range(n)]
+    x = solve(transposed, [F(int(k == o)) for k in range(n)])
+    den = 1
+    for v in x:
+        den = den * v.denominator // math.gcd(den, v.denominator)
+    ints = [int(v * den) for v in x]
+    g = 0
+    for v in ints:
+        g = math.gcd(g, abs(v))
+    return [v // g for v in ints]
+
+
+def check_dual_vector(table, o, vec):
+    n = len(table)
+    for k in range(n):
+        total = sum(table[c][k] * vec[c] for c in range(n))
+        require((total != 0) == (k == o), "not a dual vector for orbit %d" % o)
+
+
+# ---- step 2 on the 4 by 4 coarse torus: 4 summed-out sites, 12 kept spins, 4096 configurations ------------
+COARSE = 4
+COARSE_B = [(u, v) for u in range(0, COARSE, 2) for v in range(0, COARSE, 2)]
+COARSE_KEPT = [(u, v) for u in range(COARSE) for v in range(COARSE) if (u % 2, v % 2) != (0, 0)]
+
+
+def coarse_block_pattern(cfg, b):
+    return tuple(cfg[((b[0] + du) % COARSE, (b[1] + dv) % COARSE)] for du, dv in BLOCK_SITES)
+
+
+def coarse_weight_poly(cfg, block_polys):
+    """W2 as a polynomial in p and q, exact: the product over the four summed-out sites of the block factor."""
+    w = {(0, 0): 1}
+    for b in COARSE_B:
+        w = poly_times(w, block_polys[coarse_block_pattern(cfg, b)])
+    return tuple(sorted(w.items()))
+
+
+def coarse_weight_brute(cfg, y_p, y_q):
+    """W2 from its definition, as a number at rational p and q: the sum over the four summed-out spins of the
+    product over the 16 faces."""
+    total = F(0)
+    for sb in itertools.product((1, -1), repeat=len(COARSE_B)):
+        full = dict(cfg)
+        full.update(zip(COARSE_B, sb))
+        e_p = e_q = 0
+        for u in range(COARSE):
+            for v in range(COARSE):
+                c = [full[(u, v)], full[((u + 1) % COARSE, v)], full[(u, (v + 1) % COARSE)], full[((u + 1) % COARSE, (v + 1) % COARSE)]]
+                e_p += sum(c[i] * c[j] for i in range(4) for j in range(i + 1, 4))
+                e_q += c[0] * c[1] * c[2] * c[3]
+        total += y_p ** e_p * y_q ** e_q
+    return total
+
+
+def coarse_eval(poly, p, q):
+    return sum(c * p ** i * q ** j for (i, j), c in poly)
+
+
+def check_coarse_product(cfg, block_polys, p, q):
+    """The product of block factors against the definition of W2, at rational p and q."""
+    require(coarse_eval(coarse_weight_poly(cfg, block_polys), p, q) == coarse_weight_brute(cfg, p, q),
+            "the block product differs from the definition")
+
+
+def coarse_pair_set(kind):
+    """Pairs of kept coarse sites for the descriptions that the first step suggests."""
+    pairs = {}
+    for a in COARSE_KEPT:
+        for c in COARSE_KEPT:
+            if a < c:
+                d = ((c[0] - a[0]) % COARSE, (c[1] - a[1]) % COARSE)
+                d = min(d, ((-d[0]) % COARSE, (-d[1]) % COARSE))
+                pairs.setdefault(d, []).append((a, c))
+    if kind == "nn_and_diag":
+        nn = [pr for d in ((1, 0), (0, 1)) for pr in pairs.get(d, [])]
+        dg = [pr for d in ((1, 1), (1, 3)) for pr in pairs.get(d, [])]
+        return [nn, dg]
+    return [pairs[d] for d in sorted(pairs)]
+
+
+def coarse_configs():
+    for vals in itertools.product((1, -1), repeat=len(COARSE_KEPT)):
+        yield dict(zip(COARSE_KEPT, vals))
+
+
+def coarse_orbit_vector(cfg, table_index, table):
+    """The 27 orbit sums: for each summed-out site add the table row of its pattern's class."""
+    vec = [0] * len(table[0])
+    for b in COARSE_B:
+        row = table[table_index[block_class_of(coarse_block_pattern(cfg, b))]]
+        for k, v in enumerate(row):
+            vec[k] += v
+    return tuple(vec)
+
+
+def coarse_forks(keys_and_polys):
+    """Classes (value of the description) that hold two different weights, and the class count."""
+    classes = {}
+    for key, poly in keys_and_polys:
+        classes.setdefault(key, set()).add(poly)
+    return [k for k, v in classes.items() if len(v) > 1], len(classes)
+
+
+def coarse_census(drop=()):
+    """Weights as polynomials, and the descriptions D0 (restricted first-step description), D1 (all pair sums),
+    D2 (the 27 orbit sums, minus the orbits listed in drop)."""
+    block_polys = {pat: block_poly(pat) for pat in BLOCK_PATTERNS}
+    classes, orbits, table = block_tables()
+    index = {c: i for i, c in enumerate(classes)}
+    d0, d1 = coarse_pair_set("nn_and_diag"), coarse_pair_set("all")
+    keep = [k for k in range(len(orbits)) if k not in drop]
+    rows = []
+    for cfg in coarse_configs():
+        poly = coarse_weight_poly(cfg, block_polys)
+        vec = coarse_orbit_vector(cfg, index, table)
+        rows.append((cfg, poly, vec))
+    return rows, classes, orbits, table, d0, d1, keep
+
+
+def pair_sums(cfg, groups):
+    return tuple(sum(cfg[a] * cfg[c] for a, c in g) for g in groups)
+
+
+def root8_interval(r, bits=64):
+    """Exact Fractions lo <= r^(1/8) <= hi, with hi - lo = 2^-bits."""
+    m = (r.numerator << (8 * bits)) // r.denominator
+    n = int(round(m ** (1 / 8)))
+    while n ** 8 > m:
+        n -= 1
+    while (n + 1) ** 8 <= m:
+        n += 1
+    return F(n, 2 ** bits), F(n + 1, 2 ** bits)
+
+
+def curve_interval(x):
+    """Intervals for p and q on the K curve at x = e^(2K), x a rational above 1."""
+    c2, c4 = (x + 1 / x) / 2, (x * x + 1 / (x * x)) / 2
+    return root8_interval(c4), root8_interval(c4 / c2 ** 4)
+
+
+def poly_interval(poly, pi, qi):
+    """Exact enclosure of sum c * p^i * q^j for p in pi, q in qi, all terms with positive c."""
+    lo = hi = F(0)
+    for (i, j), c in poly:
+        require(c > 0, "interval sums need positive coefficients")
+        lo += c * (pi[0] if i >= 0 else pi[1]) ** i * (qi[0] if j >= 0 else qi[1]) ** j
+        hi += c * (pi[1] if i >= 0 else pi[0]) ** i * (qi[1] if j >= 0 else qi[0]) ** j
+    return lo, hi
+
+
+def check_fork_on_curve(poly1, poly2, x):
+    """The two weights are different numbers on the K curve at x: their enclosures do not meet."""
+    pi, qi = curve_interval(x)
+    a, b = poly_interval(poly1, pi, qi), poly_interval(poly2, pi, qi)
+    require(a[1] < b[0] or b[1] < a[0], "the enclosures of the two weights meet at x = %s" % x)
+
+
+def first_fork(rows, key_of):
+    classes = {}
+    for cfg, poly, vec in rows:
+        classes.setdefault(key_of(cfg, vec), {}).setdefault(poly, cfg)
+    for key, polys in classes.items():
+        if len(polys) > 1:
+            return list(polys)[:2]
+    return None
+
+
+def run_second_step_census(curve_points=(F(2), F(3, 2), F(7, 5), F(5))):
+    rows, classes, orbits, table, d0, d1, keep = coarse_census()
+    out = {"class_count": len(classes), "orbit_count": len(orbits)}
+    out["blocks_checked"] = check_block_symmetry()
+    check_invertible(table)
+    # the weight formula against the definition on seeded configurations at generic rational p and q
+    rng = random.Random(SEED_DECIM)
+    block_polys = {pat: block_poly(pat) for pat in BLOCK_PATTERNS}
+    for _ in range(6):
+        cfg = {s: rng.choice((1, -1)) for s in COARSE_KEPT}
+        for p, q in ((F(3, 2), F(5, 4)), (F(7, 5), F(2, 3))):
+            check_coarse_product(cfg, block_polys, p, q)
+    # D2 closes, D0 and D1 fork
+    f2 = coarse_forks([(vec, poly) for cfg, poly, vec in rows])
+    require(not f2[0], "the 27 orbit sums fork")
+    f0 = coarse_forks([(pair_sums(cfg, d0), poly) for cfg, poly, vec in rows])
+    f1 = coarse_forks([(pair_sums(cfg, d1), poly) for cfg, poly, vec in rows])
+    require(f0[0] and f1[0], "the restricted or the pair description should fork")
+    out["D2"], out["D0"], out["D1"] = (f2[1], len(f2[0])), (f0[1], len(f0[0])), (f1[1], len(f1[0]))
+    for name, groups in (("D0", d0), ("D1", d1)):
+        pair = first_fork(rows, lambda cfg, vec, g=groups: pair_sums(cfg, g))
+        for x in curve_points:
+            check_fork_on_curve(pair[0], pair[1], x)
+    out["curve_points"] = [str(x) for x in curve_points]
+    return out
+
+
+def run_drop_census():
+    """Drop orbits from the 27 on the 4 by 4 coarse torus: no fork, for every single orbit of degree 4 or more
+    and for all of degrees 6 and 8 together. Keeping only the constant and the degree-2 orbits forks."""
+    rows, classes, orbits, table, d0, d1, keep = coarse_census()
+    degree = [len(o) for o in orbits]
+    def forks_without(dropped):
+        kept = [k for k in range(len(orbits)) if k not in dropped]
+        return coarse_forks([(tuple(vec[k] for k in kept), poly) for cfg, poly, vec in rows])
+    out = {"single_drops_without_fork": 0}
+    for k in range(len(orbits)):
+        if degree[k] >= 4:
+            f = forks_without({k})
+            require(not f[0], "dropping orbit %d forks on the 4x4 coarse torus" % k)
+            out["single_drops_without_fork"] += 1
+    f = forks_without({k for k in range(len(orbits)) if degree[k] >= 6})
+    require(not f[0], "dropping degrees 6 and 8 forks on the 4x4 coarse torus")
+    out["degree_6_and_8_dropped"] = (f[1], len(f[0]))
+    g = forks_without({k for k in range(len(orbits)) if degree[k] >= 4})
+    require(g[0], "keeping degrees 0 and 2 should fork")
+    out["degree_0_and_2_only"] = (g[1], len(g[0]))
+    return out
+
+
+def dual_bounds():
+    """For each non-constant orbit: the sum of absolute values of its least integer dual vector, and so the least
+    number of summed-out sites on which dropping that orbit alone can fork, half that sum."""
+    classes, orbits, table = block_tables()
+    out = {}
+    for k, o in enumerate(orbits):
+        if len(o) == 0:
+            continue
+        vec = dual_vector(table, k)
+        check_dual_vector(table, k, vec)
+        out.setdefault(len(o), []).append(sum(abs(v) for v in vec) // 2)
+    return {d: sorted(v) for d, v in out.items()}
+
+
+# ---- the coefficients of the weight in the spin-monomial (Walsh) basis -----------------------------------------
+# ln(2 cosh h) over the 8 neighbours of a summed-out coarse site, with h = beta*S + gamma*T and beta, gamma from the
+# K curve. Its coefficient on a monomial is the average of the function times the monomial over the 256 patterns.
+# Arithmetic: 40-digit Decimal. This is numerical, not exact, and no error bound is carried.
+DECIMAL_DIGITS = 40
+
+
+def walsh_groups():
+    """Patterns grouped by (S, T), with for each even orbit the sum of its representative monomial over the group."""
+    reps = sorted(block_even_orbits(), key=lambda k: (len(k), k))
+    groups = {}
+    for pat in BLOCK_PATTERNS:
+        _, s, t = block_exponents(pat)
+        g = groups.setdefault((s, t), [0] * len(reps))
+        for k, r in enumerate(reps):
+            g[k] += prod_of(pat, r)
+    return reps, groups
+
+
+def walsh_coefficients(x, reps, groups):
+    """The 27 coefficients at x = e^(2K), a rational above 1."""
+    with decimal.localcontext() as ctx:
+        ctx.prec = DECIMAL_DIGITS
+        xd = decimal.Decimal(x.numerator) / decimal.Decimal(x.denominator)
+        c2, c4 = (xd + 1 / xd) / 2, (xd * xd + 1 / (xd * xd)) / 2
+        beta = c4.ln() / 8
+        gamma = beta - c2.ln() / 2
+        out = [decimal.Decimal(0)] * len(reps)
+        for (s, t), w in groups.items():
+            h = beta * s + gamma * t
+            v = (h.exp() + (-h).exp()).ln()
+            out = [o + wk * v for o, wk in zip(out, w)]
+        return [o / 256 for o in out]
+
+
+def check_sign_change(before, after):
+    require(before * after < 0, "no sign change between the two ends")
+
+
+def zero_scan_grid():
+    """x = 1 + i/50 up to 3, then 3 + i/10 up to 40."""
+    return [F(50 + i, 50) for i in range(1, 101)] + [F(30 + i, 10) for i in range(1, 371)]
+
+
+def scan_for_zeros():
+    reps, groups = walsh_groups()
+    xs = zero_scan_grid()
+    prev = walsh_coefficients(xs[0], reps, groups)
+    smallest = min(abs(v) for v in prev)
+    found = []
+    for a, b in zip(xs, xs[1:]):
+        cur = walsh_coefficients(b, reps, groups)
+        smallest = min(smallest, min(abs(v) for v in cur))
+        found += [(k, a, b) for k in range(len(reps)) if prev[k] * cur[k] < 0]
+        prev = cur
+    return reps, groups, found, smallest
+
+
+def locate_zero(k, a, b, reps, groups, steps=45):
+    """Bisect the sign change of orbit k between a and b, with exact rational midpoints."""
+    sa = walsh_coefficients(a, reps, groups)[k]
+    sb = walsh_coefficients(b, reps, groups)[k]
+    check_sign_change(sa, sb)
+    for _ in range(steps):
+        mid = (a + b) / 2
+        if walsh_coefficients(mid, reps, groups)[k] * sa > 0:
+            a = mid
+        else:
+            b = mid
+    return a, b
+
+
+def run_zero_census():
+    reps, groups, found, smallest = scan_for_zeros()
+    out = {"grid_points": len(zero_scan_grid()), "smallest_abs_coefficient_on_grid": float(smallest), "zeros": []}
+    for k, a, b in found:
+        lo, hi = locate_zero(k, a, b, reps, groups)
+        out["zeros"].append((len(reps[k]), reps[k], float((lo + hi) / 2)))
+    return out
+
+
+class TestDecimation(unittest.TestCase):
+    """docs/09 section 7.7: decimation of the Ising model as a closure defect."""
+
+    def test_doc09_c5_decimation_ring_has_no_fork(self):
+        census = run_ring_census()
+        self.assertEqual(census["classes"], {3: 2, 4: 3, 5: 3, 6: 4, 7: 4})
+        self.assertEqual(census["couplings"], ["2", "3/2", "5/3"])
+
+    def test_doc09_c5_decimation_torus_fork_and_one_step_closure(self):
+        census = run_torus_census()
+        self.assertEqual((census["4x4_nn_classes"], census["4x4_nn_forking"]), (7, 1))
+        self.assertEqual(census["4x4_signatures_in_forking_class"][:1], [(0, 8, 0)])
+        self.assertIn((4, 4, 0), census["4x4_signatures_in_forking_class"])
+        self.assertEqual(census["4x4_enlarged_classes"], 12)
+        self.assertEqual(census["4x4_without_four_spin_forking"], 1)
+        self.assertEqual(census["witness_nn_value"], 40)
+
+    def test_doc09_c5_decimation_second_step_and_dropped_terms(self):
+        census = run_second_step_census()
+        self.assertEqual((census["class_count"], census["orbit_count"]), (27, 27))
+        self.assertEqual((census["D2"], census["D0"], census["D1"]), ((115, 0), (29, 19), (268, 21)))
+        drops = run_drop_census()
+        self.assertEqual(drops, {"single_drops_without_fork": 20, "degree_6_and_8_dropped": (115, 0), "degree_0_and_2_only": (108, 6)})
+        self.assertEqual(dual_bounds(), {2: [15, 15, 16, 16, 32, 32], 4: [12, 12, 15, 15, 15, 15, 16, 16, 16, 16, 16, 64, 64],
+                                         6: [15, 15, 16, 16, 32, 32], 8: [64]})
+
+    def test_doc09_c5_decimation_isolated_zeros_of_block_coefficients(self):
+        census = run_zero_census()
+        got = sorted((deg, round(x, 6)) for deg, _, x in census["zeros"])
+        self.assertEqual(got, [(4, 2.062078), (4, 3.755034), (4, 4.250651), (6, 1.987456)])
+        self.assertGreater(census["smallest_abs_coefficient_on_grid"], 1e-30)
+
+    def test_doc09_c5_decimation_checks_go_red(self):
+        # Ring: the magnetization is not a closed description, and a corrupted weight forks.
+        self.assertTrue(goes_red(check_ring_has_no_fork, 5, lambda a: sum(a), ring_weight_brute))
+        first = tuple([1] * 5)
+        self.assertTrue(goes_red(check_ring_has_no_fork, 5, ring_nn,
+                                 lambda a, y: ring_weight_brute(a, y) + (1 if a == first else 0)))
+        self.assertTrue(goes_red(check_ring_closed_form, 4, F(2), 1))                  # one extra aligned bond
+        # Torus: the witness with its two configurations made equal is not a fork, and unequal descriptions are not either.
+        a1 = torus_flipped(6, 6, WITNESS_TWO)
+        self.assertTrue(goes_red(check_torus_fork, 6, 6, a1, dict(a1), F(2)))
+        self.assertTrue(goes_red(check_torus_fork, 6, 6, a1, torus_flipped(6, 6, WITNESS_L[:1]), F(2)))
+        # Enlarged description: without the four-spin term it forks, and a corrupted weight forks.
+        self.assertTrue(goes_red(check_closes, 4, 4, torus_spec_no_four_spin))
+        self.assertTrue(goes_red(check_closes, 4, 4, torus_spec_enlarged,
+                                 lambda a, lx, ly, y: torus_weight(a, lx, ly, y) * (10 + a[(0, 0)])))
+        # The local identity with a wrong power of the four-spin factor is refused.
+        self.assertTrue(goes_red(check_local_identity, F(2), 1))
+        # Weight formula against the definition: a wrong coupling in the formula is caught.
+        self.assertTrue(goes_red(check_torus_weight_formula, 4, 4, F(2),
+                                 lambda a, lx, ly, y: decim_weight_product(torus_sums(a, lx, ly), y + 1)))
+        cfg = {s: 1 for s in COARSE_KEPT}
+        wrong = {pat: {(0, 0): 2} for pat in BLOCK_PATTERNS}
+        self.assertTrue(goes_red(check_coarse_product, cfg, wrong, F(3, 2), F(5, 4)))
+        # Second step: a rank-deficient orbit table, a corrupted dual vector, and weights that meet are all refused.
+        _, _, table = block_tables()
+        self.assertTrue(goes_red(check_invertible, [row[:] for row in table[:-1]] + [list(table[0])]))
+        vec = dual_vector(table, 26)
+        self.assertTrue(goes_red(check_dual_vector, table, 26, vec[:-1] + [vec[-1] + 1]))
+        w = (((0, 0), 1),)
+        self.assertTrue(goes_red(check_fork_on_curve, w, w, F(2)))
+        # A bracket with no sign change is refused.
+        reps, groups = walsh_groups()
+        self.assertTrue(goes_red(locate_zero, 0, F(2), F(3), reps, groups))
+
+
 def print_report():
     g = load_gatecheck()
     counts = check_toy_counts(g, real=True)
@@ -1466,6 +2223,11 @@ def print_report():
           check_detail_exposes_a_sampled_oracle())
     print("Closure census:", run_closure_census())
     print("Polarity census:", run_polarity_census())
+    print("Decimation, ring (sizes, couplings y = e^K, classes per size):", run_ring_census())
+    print("Decimation, torus (seed %d):" % SEED_DECIM, run_torus_census())
+    print("Decimation, second step on the 4x4 coarse torus:", run_second_step_census())
+    print("  dropped orbits:", run_drop_census(), " least summed-out sites per single dropped orbit, by degree:", dual_bounds())
+    print("  zeros of block coefficients:", run_zero_census())
     print("Thousandths as 32-bit floats (above, below, equal, n/1024 exact):", thousandths_as_float32())
 
 
