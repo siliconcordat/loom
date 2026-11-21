@@ -95,7 +95,7 @@ The checker imports `inertia_cert.py` for its parser, its errors and its `need` 
 
 **A floor below zero is not a PSD proof.** `M = diag(-16, 5)` with `lambda = -100` has a valid certificate, because the floor is true. `M` is not PSD. `psd_verdict` refuses it. A caller that reads a pass at negative `lambda` as stability is wrong.
 
-**Pencils.** Let `K = B^T W B` and `G = B^T B`, and suppose `K - lambda G = L D L^T` with `D >= 0`. Then `y^T W y >= lambda |y|^2` for every `y` in the column space of `B`. A change `E` of `W` is covered at size `lambda`, since `y^T (W + E) y >= (lambda + lambda_min(E)) |y|^2`. A change `E'` of the reduced matrix `K` is covered only down to `-lambda g`, where `G - g I` is certified PSD and `lambda >= 0`.
+**Pencils.** Let `K = B^T W B` and `G = B^T B`, and suppose `K - lambda G = L D L^T` with `D >= 0`. Then `y^T W y >= lambda |y|^2` for every `y` in the column space of `B`. A change `E` of `W` is covered at size `lambda`, since `y^T (W + E) y >= (lambda + lambda_min(E)) |y|^2`. A change `E'` of the reduced matrix `K` is covered down to `-lambda g`, where `G - g I` is certified PSD and `lambda >= 0`. That bound is sufficient, and the one-by-one example below shows it cannot be improved there.
 
 The one-dimensional example `B = [1/2]`, `W = [1]` shows the gap. Here `K = G = 1/4`, and `lambda = 1` is certified with a zero pivot. The change `E' = -1/2` has size at most `lambda`, yet `K + E'` is negative. With `g = 1/4` the covered size is `1/4`.
 
@@ -369,7 +369,9 @@ The hypothesis fails if a loader that recomputes `Q(s)` from the weights it serv
 
 ## 6. First Uses Outside This Repository
 
-The checker has been proposed for matrices from other drafts. These are the 16 by 16 and 24 by 24 rational matrices of the Barnes-Wall and Leech arc certificates, and the stiffness matrices of the fold study (Foundation-0/incentre-lattices draft pull requests 106 and 107). Their sizes are under 64. Apart from the E_8 path below, their entries are rational, so they are within the checker's limits.
+Our outside check found matrices in other drafts that the checker could certify. None of those drafts uses it yet. They are the 16 by 16 and 24 by 24 rational matrices of the Barnes-Wall and Leech arc certificates, and the stiffness matrices of the fold study (Foundation-0/incentre-lattices draft pull requests 106 and 107), which were at most 36 by 36 in the cases that check ran.
+
+Apart from the E_8 path below, their entries are rational, so they are within the checker's limits.
 
 We have not run the checker on them in this change. One gap is known. Points on the E_8 path have entries in `Q(sqrt 2)`, the rationals with `sqrt 2` adjoined. The checker does not read such entries.
 
@@ -378,7 +380,8 @@ We have not run the checker on them in this change. One gap is known. Points on 
 **Limits.**
 
 - Cost grows with rank in pure fractions. From rank 16 to rank 32 in the table, checking time grows about twelve-fold and the certificate about six-fold, because the numerators and denominators grow. The checker also refuses sizes above 64.
-- A second, independent certificate checker now exists: the dual-oracle checker in Foundation-0/spectral-inertia. It shares no code with ours. Our outside check ran both on 400 fresh matrices and 800 tampered certificates. There was no disagreement, and each checker rejects the other's must-fail inputs. The matrices included singular ones, zero diagonals, repeated eigenvalues and entries near 10^12.
+- A second, independent certificate checker now exists: the dual-oracle checker in Foundation-0/spectral-inertia. It is a separate implementation by another team.
+  Our outside check ran both on 400 fresh matrices and 800 tampered certificates. There was no disagreement, and each checker rejects the other's must-fail inputs. The matrices included singular ones, zero diagonals, repeated eigenvalues and entries near 10^12.
 - The two checkers do not read each other's certificates as written. Theirs requires lowest-terms strings and rejects a denominator of 1, so `"1/1"` and `"0/1"` fail. Ours requires the `p/q` form and rejects a bare integer. The agreement above was found after converting the strings.
 - A common format would give each rational one spelling: a string `p/q` in lowest terms with `q >= 1`, so an integer is written `p/1`. Ours reads that form now. Theirs would need to accept a denominator of 1, which our check found to be a one-line change. No converter is part of this change. We keep both checkers.
 - Size and speed, on one machine. Their full dual check adds a second, independent oracle that ours does not have. With it, a matrix of size 64 did not finish in about 11 minutes. That second oracle is the slow part. Their congruence oracle alone is five to six times faster than our checker: 0.29 s against 1.66 s at size 48, and 0.78 s against 4.0 s at size 64.
