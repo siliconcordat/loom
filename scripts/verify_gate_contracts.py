@@ -2343,11 +2343,13 @@ def check_flag_rate(k, cutoff, n=20000):
     return mean_share, cut_share
 
 
-def check_mean_share(k, n=20000):
-    """The share of healthy fits above the mean is near P(chi2_k > k)."""
-    mean_share, _ = gof_shares(k, n, GOF_CUTOFFS[k])
+def check_gof_shares(k, n=20000):
+    """One simulation per k, two checks: the share above the cutoff is near alpha and the share above the
+    mean is near P(chi2_k > k). Returns both shares."""
+    mean_share, cut_share = gof_shares(k, n, GOF_CUTOFFS[k])
+    check_share_near(cut_share, GOF_ALPHA, n, "flag rate at cutoff %s, k = %d" % (GOF_CUTOFFS[k], k))
     check_share_near(mean_share, chi2_survival(k, float(k)), n, "share above the mean, k = %d" % k)
-    return mean_share
+    return mean_share, cut_share
 
 
 def run_gof_census():
@@ -2359,8 +2361,7 @@ def run_gof_census():
         if k <= 2:
             check_exceed_mean_by_integration(k, claimed[k])
         check_cutoff(k, GOF_CUTOFFS[k])
-        mean_share, cut_share = check_flag_rate(k, GOF_CUTOFFS[k])
-        check_mean_share(k)
+        mean_share, cut_share = check_gof_shares(k)
         out["simulation"][k] = (round(mean_share, 4), round(cut_share, 4))
     out["bounded"]["coordinate_signs"] = check_bounded_case(COORD_DESIGN)
     out["bounded"]["coordinate_grid"] = check_bounded_case(COORD_DESIGN, grid=GOF_GRID)
@@ -2394,8 +2395,8 @@ class TestGoodnessOfFit(unittest.TestCase):
 
     def test_doc09_c4_simulation_matches_probabilities(self):
         for k in GOF_DOF:
-            self.assertGreater(check_mean_share(k), 0.25)
-            _, cut_share = check_flag_rate(k, GOF_CUTOFFS[k])
+            mean_share, cut_share = check_gof_shares(k)
+            self.assertGreater(mean_share, 0.25)
             self.assertLess(cut_share, 0.02)
 
     def test_doc09_c4_goodness_of_fit_checks_go_red(self):
