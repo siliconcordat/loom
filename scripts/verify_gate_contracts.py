@@ -2225,6 +2225,198 @@ class TestDecimation(unittest.TestCase):
         self.assertTrue(goes_red(locate_zero, 0, F(2), F(3), reps, groups))
 
 
+# ---- Goodness of fit after adaptation (docs/09 section 6.1, "What is left to check") ----
+
+GOF_SEED = 20261125
+GOF_DOF = (1, 2, 10)
+GOF_CUTOFFS = {1: 6.635, 2: 9.210, 10: 23.209}     # upper 0.01 quantiles of chi-square, three decimals
+GOF_ALPHA = 0.01
+
+
+def chi2_survival(k, x):
+    """P(chi-square with k degrees of freedom exceeds x), standard library only.
+
+    k = 1: erfc(sqrt(x/2)). Even k: exp(-x/2) times the sum of (x/2)^j / j! for j below k/2."""
+    if k == 1:
+        return math.erfc(math.sqrt(x / 2))
+    require(k % 2 == 0, "closed form only for k = 1 and even k")
+    half = x / 2
+    return math.exp(-half) * sum(half ** j / math.factorial(j) for j in range(k // 2))
+
+
+def chi2_survival_by_integration(k, x, steps=200000, top=80.0):
+    """Second route for k = 1 and k = 2: Simpson's rule on the density, sharing no code with chi2_survival."""
+    if k == 1:
+        lo, hi = math.sqrt(x), math.sqrt(top)          # x = t^2, t standard normal, both signs
+        f = lambda t: 2 * math.exp(-t * t / 2) / math.sqrt(2 * math.pi)
+    else:
+        require(k == 2, "integration route is for k = 1 and 2")
+        lo, hi = x, top
+        f = lambda t: math.exp(-t / 2) / 2
+    h = (hi - lo) / steps
+    total = f(lo) + f(hi) + sum((4 if i % 2 else 2) * f(lo + i * h) for i in range(1, steps))
+    return total * h / 3
+
+
+def gof_exceed_mean_claimed():
+    """The probabilities the document states that a healthy Gaussian fit exceeds its own mean k s^2."""
+    return {1: 1 - math.erf(1 / math.sqrt(2)), 2: math.exp(-1), 10: float(F(523, 8)) * math.exp(-5)}
+
+
+def check_exceed_mean(k, claimed):
+    """The claimed probability matches the survival value at x = k. For even k it also matches the exact
+    rational coefficient times e^-(k/2). Returns that coefficient, or None for k = 1."""
+    got = chi2_survival(k, float(k))
+    require(abs(got - claimed) < 1e-12, "closed form for k = %d disagrees with the survival function" % k)
+    if k % 2 == 0:
+        coeff = sum(F(k, 2) ** j / math.factorial(j) for j in range(k // 2))
+        require(abs(float(coeff) * math.exp(-k / 2) - claimed) < 1e-12, "rational coefficient for k = %d is wrong" % k)
+        return coeff
+    return None
+
+
+def check_exceed_mean_by_integration(k, claimed):
+    require(abs(chi2_survival_by_integration(k, float(k)) - claimed) < 1e-9, "numerical integral disagrees for k = %d" % k)
+
+
+def check_cutoff(k, cutoff, alpha=GOF_ALPHA):
+    """The quoted cutoff is the upper-alpha quantile to its last quoted digit: the survival value is alpha within
+    half a unit of the last digit on each side (it falls as the cutoff rises)."""
+    unit = 0.0005
+    require(chi2_survival(k, cutoff - unit) >= alpha >= chi2_survival(k, cutoff + unit),
+            "cutoff %s for k = %d is not the upper %s quantile" % (cutoff, k, alpha))
+
+
+def residual_sq(e, Phi):
+    """|(I - P) e|^2 in exact rationals."""
+    o = outside_part(e, Phi)
+    return dot(o, o)
+
+
+def check_bounded_case(Phi, s=F(1), grid=None):
+    """Every noise vector with entries in [-s, s] (the two signs only, or every point of a grid) leaves |r*|^2
+    at most (m - rank Phi) s^2. Returns (vectors tried, largest residual over s^2)."""
+    budget = (len(Phi) - rank(Phi)) * s * s
+    values = grid if grid is not None else (-s, s)
+    worst, tried = F(0), 0
+    for e in itertools.product(values, repeat=len(Phi)):
+        tried += 1
+        worst = max(worst, residual_sq(list(e), Phi))
+        require(worst <= budget, "noise inside [-s, s] pushed the residual above (m - rank) s^2")
+    return tried, worst / (s * s)
+
+
+COORD_DESIGN = [[F(1), F(0)], [F(0), F(1)], [F(0), F(0)], [F(0), F(0)], [F(0), F(0)]]   # m = 5, rank 2
+SLANT_DESIGN = [[F(1)], [F(1)], [F(0)]]                                                   # m = 3, rank 1, not on the axes
+GOF_GRID = (F(-1), F(-1, 2), F(0), F(1, 2), F(1))
+
+
+def gof_shares(k, n, cutoff, seed=GOF_SEED):
+    """Seeded healthy fits: m = k + 2 residuals, a line fitted by least squares (columns 1 and t), Gaussian
+    noise of width 1. Returns the share with |r*|^2 above the mean k and the share above the given cutoff."""
+    rng = random.Random(seed + k)
+    m = k + 2
+    ts = [float(i) for i in range(m)]
+    tbar = sum(ts) / m
+    stt = sum((t - tbar) ** 2 for t in ts)
+    above_mean = above_cut = 0
+    for _ in range(n):
+        e = [rng.gauss(0.0, 1.0) for _ in range(m)]
+        ebar = sum(e) / m
+        slope = sum((t - tbar) * (x - ebar) for t, x in zip(ts, e)) / stt
+        r2 = sum((x - ebar - slope * (t - tbar)) ** 2 for t, x in zip(ts, e))
+        above_mean += r2 > k
+        above_cut += r2 > cutoff
+    return above_mean / n, above_cut / n
+
+
+def check_share_near(share, p, n, what):
+    """A sampled share lies within five binomial standard deviations of its probability."""
+    sd = math.sqrt(p * (1 - p) / n)
+    require(abs(share - p) < 5 * sd, "%s: share %.4f is not near %.4f" % (what, share, p))
+
+
+def check_flag_rate(k, cutoff, n=20000):
+    """Flagging when |r*|^2 exceeds the cutoff flags about alpha of healthy fits. Returns the shares."""
+    mean_share, cut_share = gof_shares(k, n, cutoff)
+    check_share_near(cut_share, GOF_ALPHA, n, "flag rate at cutoff %s, k = %d" % (cutoff, k))
+    return mean_share, cut_share
+
+
+def check_mean_share(k, n=20000):
+    """The share of healthy fits above the mean is near P(chi2_k > k)."""
+    mean_share, _ = gof_shares(k, n, GOF_CUTOFFS[k])
+    check_share_near(mean_share, chi2_survival(k, float(k)), n, "share above the mean, k = %d" % k)
+    return mean_share
+
+
+def run_gof_census():
+    claimed = gof_exceed_mean_claimed()
+    out = {"exceed_mean": {}, "cutoffs": dict(GOF_CUTOFFS), "simulation": {}, "bounded": {}}
+    for k in GOF_DOF:
+        coeff = check_exceed_mean(k, claimed[k])
+        out["exceed_mean"][k] = (round(claimed[k], 4), str(coeff) if coeff is not None else "erfc(1/sqrt 2)")
+        if k <= 2:
+            check_exceed_mean_by_integration(k, claimed[k])
+        check_cutoff(k, GOF_CUTOFFS[k])
+        mean_share, cut_share = check_flag_rate(k, GOF_CUTOFFS[k])
+        check_mean_share(k)
+        out["simulation"][k] = (round(mean_share, 4), round(cut_share, 4))
+    out["bounded"]["coordinate_signs"] = check_bounded_case(COORD_DESIGN)
+    out["bounded"]["coordinate_grid"] = check_bounded_case(COORD_DESIGN, grid=GOF_GRID)
+    out["bounded"]["slanted_signs_residual_vs_budget"] = (residual_sq([F(1), F(-1), F(1)], SLANT_DESIGN), 2)
+    return out
+
+
+class TestGoodnessOfFit(unittest.TestCase):
+    """docs/09 section 6.1: the mean of the residual is not a cutoff, and a level fixed before the fit is."""
+
+    def test_doc09_c4_exceed_mean_closed_forms(self):
+        claimed = gof_exceed_mean_claimed()
+        self.assertEqual([round(claimed[k], 4) for k in GOF_DOF], [0.3173, 0.3679, 0.4405])
+        self.assertEqual(check_exceed_mean(2, claimed[2]), 1)
+        self.assertEqual(check_exceed_mean(10, claimed[10]), F(523, 8))
+        self.assertIsNone(check_exceed_mean(1, claimed[1]))
+        self.assertTrue(claimed[1] < claimed[2] < claimed[10] < 0.5)
+        for k in (1, 2):
+            check_exceed_mean_by_integration(k, claimed[k])
+
+    def test_doc09_c4_cutoffs_are_upper_quantiles(self):
+        for k, c in GOF_CUTOFFS.items():
+            check_cutoff(k, c)
+            self.assertAlmostEqual(chi2_survival(k, c), GOF_ALPHA, places=4)
+
+    def test_doc09_c4_bounded_noise_and_coordinate_design(self):
+        self.assertEqual(check_bounded_case(COORD_DESIGN), (32, 3))
+        self.assertEqual(check_bounded_case(COORD_DESIGN, grid=GOF_GRID), (3125, 3))
+        # Off the coordinate axes the signs alone pass the budget: m - rank = 2 and the residual is 3.
+        self.assertEqual(residual_sq([F(1), F(-1), F(1)], SLANT_DESIGN), 3)
+
+    def test_doc09_c4_simulation_matches_probabilities(self):
+        for k in GOF_DOF:
+            self.assertGreater(check_mean_share(k), 0.25)
+            _, cut_share = check_flag_rate(k, GOF_CUTOFFS[k])
+            self.assertLess(cut_share, 0.02)
+
+    def test_doc09_c4_goodness_of_fit_checks_go_red(self):
+        claimed = gof_exceed_mean_claimed()
+        # The mean used as the cutoff is not a 0.01 test, by the quantile and by the flag rate at every k.
+        for k in GOF_DOF:
+            self.assertTrue(goes_red(check_cutoff, k, float(k)))
+            self.assertTrue(goes_red(check_flag_rate, k, float(k), 5000))
+        # A wrong closed form, a wrong exact coefficient and a wrong integral are refused.
+        self.assertTrue(goes_red(check_exceed_mean, 2, 0.5))
+        self.assertTrue(goes_red(check_exceed_mean, 10, claimed[10] + 1e-6))
+        self.assertTrue(goes_red(check_exceed_mean_by_integration, 1, 0.5))
+        # The 0.05 cutoff and a cutoff off by one in the third decimal are refused.
+        self.assertTrue(goes_red(check_cutoff, 1, 3.841))
+        self.assertTrue(goes_red(check_cutoff, 10, 23.211))
+        # The bounded-noise check fails on a design that is not spanned by coordinate axes.
+        self.assertTrue(goes_red(check_bounded_case, SLANT_DESIGN))
+        # A share compared with the wrong probability is refused.
+        self.assertTrue(goes_red(check_share_near, gof_shares(2, 20000, 9.21)[0], 0.5, 20000, "wrong target"))
+
+
 def print_report():
     g = load_gatecheck()
     counts = check_toy_counts(g, real=True)
@@ -2247,6 +2439,7 @@ def print_report():
     print("Decimation, second step on the 4x4 coarse torus:", run_second_step_census())
     print("  dropped orbits:", run_drop_census(), " least summed-out sites per single dropped orbit, by degree:", dual_bounds())
     print("  zeros of block coefficients:", run_zero_census())
+    print("Goodness of fit, mean not a cutoff (k = 1, 2, 10; seed %d):" % GOF_SEED, run_gof_census())
     print("Thousandths as 32-bit floats (above, below, equal, n/1024 exact):", thousandths_as_float32())
 
 

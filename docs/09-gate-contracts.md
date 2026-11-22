@@ -7,6 +7,7 @@ One principle carries the document: **a gate's verdict must not be movable by wh
 Each is set next to measurements made on the five layers and the working repositories on 2026-11-20.
 
 A sibling team adopted these contracts and extended them into a nine-gate research protocol (`Foundation-0/cave-expedition`, `verification/PROTOCOL.md`) and a research method (`Foundation-0/aletheia`). An outside check of that team's results changed Claim 9, Falsifier 6 and Record C below.
+A later reading of that team's implementation of the latch found a gap in Section 6.1. The text called the mean of the total residual a goodness-of-fit test, and the code and one of our own issues used the mean as a cutoff. The passage now says what the test is.
 
 Status tags follow this repository's evidence rule. `verified` means a proof given here and a check in [`scripts/verify_gate_contracts.py`](../scripts/verify_gate_contracts.py), or a count over committed public output files with its command shown.
 `source claim` means measured or published elsewhere and not reproduced in this repository. `hypothesis` means a proposed rule with a test and a stated observation that would count against it. The hub contributing guide calls that third tag `proposed`.
@@ -297,7 +298,12 @@ Remarks, each checked by the script.
   The reading of an audit in the column space is bounded by the size of that inside part, so an alarm that falls during adaptation is expected whether or not the true gap closes.
 - **What is left to check.** The squared norm splits exactly: `|r0|^2 = |P r0|^2 + |r*|^2`. The total `|r*|^2` is the sum of the squared readings of the surviving audits of part (d), taken in an orthonormal basis.
   For uncorrelated noise of width `s` its expected value is `(m - rank(Phi)) s^2`, because the trace of `I - P` is `m - rank(Phi)`. A leak `g` adds `|(I - P) g|^2`. The script checks the split and the trace.
-  Comparing `|r*|^2` with that expected value is the classical goodness-of-fit test with reduced degrees of freedom (`source claim`: textbook least squares). A single audit sees a left-out effect only along its own direction. This total sees it along every outside direction.
+  That expected value is not a cutoff. Write `k = m - rank(Phi)`. With Gaussian noise of known width `s`, `|r*|^2 / s^2` follows the chi-square law with `k` degrees of freedom (`source claim`: textbook least squares). A healthy fit then exceeds its own mean with probability `P(chi2_k > k)`.
+  That probability is `1 - erf(1/sqrt 2) = 0.3173` at `k = 1`, exactly `1/e` at `k = 2`, and `(523/8) e^-5 = 0.4405` at `k = 10`. It approaches one half from below. These closed forms are `verified`. With no noise law stated, the rate of exceeding the mean is not fixed at all.
+  The goodness-of-fit test fixes a false-alarm rate `alpha` before the fit. It flags when `|r*|^2` exceeds `s^2` times the upper-`alpha` quantile of chi-square with `k` degrees of freedom. At `alpha = 0.01` the cutoffs for `k = 1, 2, 10` are 6.635, 9.210 and 23.209. They are numerical quantiles, `verified` as above: the survival value at each is 0.01 to the three decimals quoted.
+  The test needs `s^2` known in advance. If `s^2` is estimated from the same data, the ratio is no longer chi-square, and the test to use is an F test against an independent estimate of `s^2`.
+  The mean is a valid bound in one exact case: every noise value is at most `s` in size and the column space of `Phi` is spanned by coordinate axes. Then `|r*|^2` is a sum of `k` squares, each at most `s^2`. The script enumerates sign vectors on a coordinate design and finds none above `k s^2`. On a slanted design signs alone exceed it (`verified`, by enumeration of that scope).
+  A seeded simulation of healthy Gaussian fits illustrates the rest (`sampled`). The mean used as a cutoff flags about 0.32, 0.37 and 0.45 of them at `k = 1, 2, 10`. The 0.01 cutoff flags about 0.01. A single audit sees a left-out effect only along its own direction. This total sees it along every outside direction.
 - **Rank-deficient `Phi`.** The residual `r*` is unique. The minimiser is not, so an outside quantity `c . theta` is fixed only for `c` in the row space. Smallest case: `Phi = [[1, 1]]`, `r0 = [2]`. Both `theta = (1, 1)` and `theta = (2, 0)` give a zero residual, and `c = (1, 0)` reads 1 and 2.
 
 **Contract 4.** (a) An audit verdict is recorded before adaptation and is bound to the state it was computed on. (b) An alarm that clears after adaptation is not evidence that the gap closed. (c) An audit counts after adaptation only by its outside part.
@@ -308,6 +314,7 @@ With `Phi` known, the squared sine `|(I - P) w|^2 / |w|^2` is computed from `w` 
 The script works in exact rational arithmetic. It checks parts (a), (b) and (d), and the general reading in (c), on 200 full-rank and 100 rank-deficient instances. It checks the squared sine on 100 more, the weighted form on 100, the stationary-point form on 60 and the gradient steps on 60.
 The statements of Claim 9 and Falsifier 6 have their own checks. On 150 instances (96 with rank-deficient `Phi`, seed 20261121) they cover the cost, the outside part, the old falsifier and the `0 < x < 2` rule with both ties. They then cover several anchors on 100 instances (seed 20261122) and revisions on 100 (seed 20261123).
 The old falsifier fires on 136 of the 150, and in each of those the outside part is unchanged and the total residual rose. Each check has a must-fail control that runs it on a corrupted input.
+The goodness-of-fit remark has its own checks: the three probabilities from their closed forms, the three cutoffs, the enumeration for the bounded-noise case and a seeded simulation. A control that replaces the cutoff by the mean must fail.
 
 **Record C (`source claim`).** Recorded in the hub plan (`siliconcordat/.github` issue 5) and not reproduced here: a first run held on 1,500 exact rational instances. The same statement was then demonstrated on a table of 14 binned points committed in `Foundation-0/gravity` at commit 8f96c4b2.
 The hub plan states both results in words. The figures below come from the runs themselves, which are not published.
@@ -540,7 +547,7 @@ Each issue or pull request is named once in this document. The matrix names the 
 | 1, clause 4 | `aska-physical/cfrp-masts` | The same change for its five bare asserts, so that a certificate written under `python3 -O` cannot record a claim the plain run rejects. | issue 3 there |
 | 2 | `Proven-Commons/mcproof`, then L4 | Record the oracle gap per family in every repair-loop receipt. Do not stop a loop on an oracle whose recorded gap is above a registered threshold. | issue 12 there |
 | 3 | `Moissanite-Labs/weft-loom`, then L4 | Run the sharper comparison of feedback detail that the record names: equal room to think, decimals read as numbers, and an arm that gets an unrelated amount, under its own preregistration. Write the oracle class into the receipt format. | draft pull request 38 |
-| 4 | L1 `siliconcordat/loom`, L4 | Bind each audit verdict to the digest of the state before adaptation. Report the squared sine of each audit against the adjustable directions. | none yet |
+| 4 | L1 `siliconcordat/loom`, L4 | Bind each audit verdict to the digest of the state before adaptation. Report the squared sine of each audit against the adjustable directions. A flag on the total residual fixes its level before the fit and uses the chi-square quantile, never the mean (Section 6.1). | none yet |
 | Section 7 | `ahrazzle/soko` | Replay every shipped bound on every catalogued route in CI. Expose per-state values from the native engine so they can be replayed too. | issue 71, with draft pull request 72 |
 | Section 7 | `ahrazzle/soko` | Give the operator-counting bound a stated result for a state that can no longer be won, in place of an error about a matrix. | issue 76 |
 | Section 7 | `ahrazzle/soko` | Keep the record that compares the published floors for one room with move sums on reachable positions. It does not settle what those floors count. | draft pull request 73 |
@@ -598,6 +605,7 @@ Limits.
 - Claim 5 is about soundness. It says nothing about speed, and nothing about whether the specification is the right one.
 - The exact status of Claim 9 is for the noiseless linear model. With noise, or for the reading of one anchor, revising the specification can raise the error. Claim 9 as a rule for real loops is untested.
 - Claim 10 is exact for a residual that is linear in the adjustable parameters and for a least-squares minimiser. For other losses only the stationary-point remark is offered.
+- The goodness-of-fit remark is exact in law for Gaussian noise of known width. For other noise laws the quantile is not the chi-square one, and the mean is a bound only in the coordinate case of Section 6.1.
 - Claims 12 and 13 are for finite systems given by one or more step maps, with unit step cost. Part (b) of Claim 12 is about a checker that evaluates the step as a black box.
 - The harness reads JSON artifacts and Python interpreter flags. It assumes a rejected fixture is rejected for its content. A fixture rejected only because a value has the wrong type can be reported as a re-spelling that passes. The reproducer shows the pair.
 
@@ -613,7 +621,7 @@ python3 -B scripts/verify_gate_contracts.py --report
 Last lines of the first command. The second prints the same apart from the time.
 
 ```text
-Ran 31 tests in 9.209s
+Ran 36 tests in 12.489s
 
 OK
 ```
@@ -645,6 +653,7 @@ Decimation, torus (seed 20261124): {'couplings': ['2', '3/2', '5/3'], '4x4_nn_cl
 Decimation, second step on the 4x4 coarse torus: {'class_count': 27, 'orbit_count': 27, 'blocks_checked': 256, 'D2': (115, 0), 'D0': (29, 19), 'D1': (268, 21), 'curve_points': ['2', '3/2', '7/5', '5']}
   dropped orbits: {'single_drops_without_fork': 20, 'degree_6_and_8_dropped': (115, 0), 'degree_0_and_2_only': (108, 6)}  least summed-out sites per single dropped orbit, by degree: {2: [15, 15, 16, 16, 32, 32], 4: [12, 12, 15, 15, 15, 15, 16, 16, 16, 16, 16, 64, 64], 6: [15, 15, 16, 16, 32, 32], 8: [64]}
   zeros of block coefficients: {'grid_points': 470, 'smallest_abs_coefficient_on_grid': 1.4226997740821344e-23, 'zeros': [(6, (0, 2, 4, 5, 6, 7), 1.9874559929133797), (4, (0, 2, 4, 5), 2.0620781369064782), (4, (0, 1, 5, 7), 3.755033876584305), (4, (0, 2, 4, 7), 4.25065098423646)]}
+Goodness of fit, mean not a cutoff (k = 1, 2, 10; seed 20261125): {'exceed_mean': {1: (0.3173, 'erfc(1/sqrt 2)'), 2: (0.3679, '1'), 10: (0.4405, '523/8')}, 'cutoffs': {1: 6.635, 2: 9.21, 10: 23.209}, 'simulation': {1: (0.3174, 0.0095), 2: (0.3672, 0.0097), 10: (0.4471, 0.01)}, 'bounded': {'coordinate_signs': (32, Fraction(3, 1)), 'coordinate_grid': (3125, Fraction(3, 1)), 'slanted_signs_residual_vs_budget': (Fraction(3, 1), 2)}}
 Thousandths as 32-bit floats (above, below, equal, n/1024 exact): (503, 489, 8, 1025)
 ```
 
