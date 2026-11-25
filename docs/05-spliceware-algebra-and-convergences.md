@@ -37,7 +37,7 @@ Can one typed Zone Manifest `M = (Z, A, Pi, Phi)` anchored at Plane 1 and parsed
    - **L4 (`exo`):** Exact deterministic zone-to-scale map `g(z)` in `{0.0, 1.0}^|A|`.
    - **L3 (`warp-modeld`):** Only the reachable active adapter bitmasks require joint canary suites. For our 5 zones (`prose`, `formal_proof`, `ui_module`, `condensed_json`, `code`) and 4 adapters, theoretical combinations drop from `2^4 - 1 = 15` down to `4` reachable masks (`0b0010`, `0b0011`, `0b0110`, `0b1010`).
    - **L2 (`weft`):** Exact out-of-zone `y = 0` preservation sets and co-active partner lists per adapter (for example, `formal_verification` preserves `{prose, ui_module, condensed_json, code}` at zero shift and shares active covariance only with `corpus_epistemic`).
-   - **L1 (`loom`):** Unique 64-bit hardware capability tag `H_64(H(M) || z_idx || z || bitmask)` per zone. Any 1-bit change in `M` rotates `H(M)` and every L1 bank tag atomically.
+   - **L1 (`loom`):** Unique 128-bit hardware capability tag `H_128([H(M), z_idx, z, bitmask])` (32 lowercase hex chars, `2^64` birthday bound rather than 64-bit's `2^32` collision floor noted in Section 4.2) per zone using canonical JSON framing. Any 1-bit change in `M` rotates `H(M)` and every L1 bank tag atomically.
 
 **Where Vertical Zone Compilation breaks:**
 
