@@ -71,9 +71,39 @@ def frob_norm(A: list[list[float]]) -> float:
 
 
 def rms_norm(v: list[float], eps: float = 1e-5) -> list[float]:
+    if not v:
+        raise ValueError("rms_norm requires a non-empty vector")
+    if isinstance(eps, bool) or not math.isfinite(eps) or eps <= 0.0:
+        raise ValueError(f"rms_norm requires finite eps > 0, got {eps!r}")
+    for x in v:
+        if isinstance(x, bool) or not math.isfinite(x):
+            raise ValueError(f"rms_norm requires finite numeric entries, got {x!r}")
     mean_sq = sum(x * x for x in v) / len(v)
     inv = 1.0 / math.sqrt(mean_sq + eps)
     return [x * inv for x in v]
+
+
+def per_bank_rms_norm(
+    v: list[float],
+    bank_sizes: tuple[int, ...] | list[int],
+    eps: float = 1e-5,
+) -> list[float]:
+    """Normalize each contiguous capability bank slice independently via RMSNorm."""
+    if not bank_sizes:
+        raise ValueError("per_bank_rms_norm requires at least one bank")
+    total = 0
+    for sz in bank_sizes:
+        if type(sz) is not int or sz <= 0:
+            raise ValueError(f"bank size must be a positive int, got {sz!r}")
+        total += sz
+    if total != len(v):
+        raise ValueError(f"sum(bank_sizes)={total} does not match len(v)={len(v)}")
+    out: list[float] = []
+    offset = 0
+    for sz in bank_sizes:
+        out.extend(rms_norm(v[offset:offset + sz], eps=eps))
+        offset += sz
+    return out
 
 
 def silu(x: float) -> float:
@@ -226,9 +256,15 @@ def run_shared_token_and_rmsnorm_experiment(seed: int = 20261119) -> dict:
     predicted_scale = math.sqrt((e_base / d_tot + eps) / ((e_base + e_slot) / d_tot + eps))
     predicted_bleed = abs(1.0 - predicted_scale)
 
-    # Per-bank RMSNorm isolates base slice identically (0.0 bleed)
-    perbank_off = rms_norm(r_base, eps=eps)
-    perbank_on = rms_norm(r_base, eps=eps)
+    # Per-bank RMSNorm receives the full concatenated state [r_base, r_slot] with explicit
+    # bank boundaries (d_base, d_slot), normalizing each bank independently so activating
+    # r_slot_strong still yields exact 0.0 base bleed while producing a non-zero slot readout.
+    bank_sizes = (d_base, d_slot)
+    perbank_off_full = per_bank_rms_norm(r_base + [0.0] * d_slot, bank_sizes, eps=eps)
+    perbank_on_full = per_bank_rms_norm(r_base + r_slot_strong, bank_sizes, eps=eps)
+    perbank_off = perbank_off_full[:d_base]
+    perbank_on = perbank_on_full[:d_base]
+    perbank_slot_on = perbank_on_full[d_base:]
     perbank_base_bleed = vec_norm(vec_sub(perbank_on, perbank_off)) / vec_norm(perbank_off)
 
     return {
@@ -239,6 +275,7 @@ def run_shared_token_and_rmsnorm_experiment(seed: int = 20261119) -> dict:
         "global_rmsnorm_base_bleed": global_base_bleed,
         "predicted_global_bleed": predicted_bleed,
         "perbank_rmsnorm_base_bleed": perbank_base_bleed,
+        "perbank_slot_on_norm": vec_norm(perbank_slot_on),
     }
 
 
@@ -444,6 +481,7 @@ def compile_deterministic_l0_cartridge(plane1_text: str, n_layers: int, d_r: int
         {"plane1_sha256": seed_bytes.hex(), "n_layers": n_layers, "d_r": d_r, "vectors": vectors},
         sort_keys=True,
         separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
     return {
         "cartridge_sha256": hashlib.sha256(payload).hexdigest(),
@@ -612,7 +650,8 @@ class TestLatentLatticeConvergence(unittest.TestCase):
         # Global RMSNorm leaks across orthogonal channels matching closed-form scale ratio
         self.assertGreater(res["global_rmsnorm_base_bleed"], 0.15)
         self.assertAlmostEqual(res["global_rmsnorm_base_bleed"], res["predicted_global_bleed"], places=12)
-        # Per-bank RMSNorm eliminates cross-channel bleed identically
+        # Per-bank RMSNorm processes the active slot bank while eliminating base bleed identically
+        self.assertGreater(res["perbank_slot_on_norm"], 1.0)
         self.assertEqual(res["perbank_rmsnorm_base_bleed"], 0.0)
 
     def test_2_horizontal_to_kv_poisoning_and_atomic_rollback(self):

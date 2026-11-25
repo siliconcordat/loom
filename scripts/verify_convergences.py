@@ -23,30 +23,61 @@ from fractions import Fraction
 # Part 1: Unified Splice Algebra & Vertical Zone Compiler (L5 -> L1)
 # ---------------------------------------------------------------------------
 
+CAPABILITY_TAG_HEX_LEN = 32  # 128-bit capability tag (2^64 birthday collision bound)
+
+
 class ContestedManifestError(ValueError):
     """Raised when a zone manifest contains an unresolved Hard Veto 2 conflict."""
 
 
 def canonical_sha256(obj: object) -> str:
-    payload = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def _is_sha256_hex(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(ch in "0123456789abcdef" for ch in value)
+    )
 
 
 def compile_vertical_zone_manifest(manifest: dict) -> dict:
     """Deterministically project ONE typed L5 zone manifest into L5..L1 artifacts."""
+    if not isinstance(manifest, dict):
+        raise ValueError("Manifest must be a dict")
     zones = manifest["zones"]
     adapters = manifest["adapters"]
     precedence = manifest["precedence"]
+    zone_predicates = manifest["zone_predicates"]
     plane1_sha = manifest["plane1_tree_sha256"]
+
+    if not isinstance(zones, list) or not zones or not all(isinstance(z, str) and z for z in zones):
+        raise ValueError("zones must be a non-empty list of non-empty strings")
+    if len(set(zones)) != len(zones):
+        raise ValueError("Duplicate zone names in manifest")
+    if not isinstance(adapters, list) or not adapters or not all(isinstance(a, str) and a for a in adapters):
+        raise ValueError("adapters must be a non-empty list of non-empty strings")
+    if len(set(adapters)) != len(adapters):
+        raise ValueError("Duplicate adapter names in manifest")
+    if not _is_sha256_hex(plane1_sha):
+        raise ValueError("plane1_tree_sha256 must be a 64-char lowercase hex SHA-256 digest")
+    if not isinstance(precedence, dict) or set(precedence.keys()) != set(zones):
+        raise ValueError("precedence keys must match zones exactly")
+    if not isinstance(zone_predicates, dict) or set(zone_predicates.keys()) != set(zones):
+        raise ValueError("zone_predicates keys must match zones exactly")
 
     # Hard Veto 2 fail-closed check: any CONTESTED entry aborts compilation.
     for z in zones:
         row = precedence[z]
+        if not isinstance(row, dict) or set(row.keys()) != set(adapters):
+            raise ValueError(f"precedence[{z!r}] keys must match adapters exactly")
         for a in adapters:
             val = row[a]
             if val == "CONTESTED":
                 raise ContestedManifestError(f"Unresolved conflict for zone={z} adapter={a}")
-            if val not in (0, 1):
+            if type(val) is not int or val not in (0, 1):
                 raise ValueError(f"Invalid precedence value {val!r} for zone={z} adapter={a}")
 
     manifest_hash = canonical_sha256(manifest)
@@ -55,7 +86,7 @@ def compile_vertical_zone_manifest(manifest: dict) -> dict:
     l5_rules = {
         "manifest_sha256": manifest_hash,
         "plane1_tree_sha256": plane1_sha,
-        "zone_predicates": manifest["zone_predicates"],
+        "zone_predicates": zone_predicates,
     }
 
     # L4 (exo): deterministic zone -> adapter scale vector g(z) in {0.0, 1.0}^M
@@ -99,15 +130,20 @@ def compile_vertical_zone_manifest(manifest: dict) -> dict:
             "co_active_partners": co_active,
         }
 
-    # L1 (loom): 64-bit capability tag per zone for KV / recurrent-state banks
+    # L1 (loom): 128-bit capability tag per zone for KV / recurrent-state banks
+    # Uses canonical JSON array framing to prevent delimiter ambiguity across zone names.
     l1_bank_tags = {}
     for z_idx, z in enumerate(zones):
         mask = 0
         for idx, a in enumerate(adapters):
             if precedence[z][a] == 1:
                 mask |= (1 << idx)
-        raw = f"{manifest_hash}:{z_idx}:{z}:{mask}".encode("utf-8")
-        l1_bank_tags[z] = hashlib.sha256(raw).hexdigest()[:16]
+        raw = json.dumps(
+            [manifest_hash, z_idx, z, mask],
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        l1_bank_tags[z] = hashlib.sha256(raw).hexdigest()[:CAPABILITY_TAG_HEX_LEN]
 
     return {
         "manifest_sha256": manifest_hash,
@@ -649,8 +685,12 @@ class TestConvergences(unittest.TestCase):
         self.assertEqual(fv_part["active_zones"], ["formal_proof"])
         self.assertEqual(fv_part["y_zero_preserve_zones"], ["prose", "ui_module", "condensed_json", "code"])
         self.assertEqual(fv_part["co_active_partners"], ["corpus_epistemic"])
-        # L1 bank tags are unique 64-bit hex digests per zone
-        self.assertEqual(len(set(out1["l1_loom"].values())), 5)
+        # L1 bank tags are unique 128-bit (32-hex) digests per zone
+        tags = list(out1["l1_loom"].values())
+        self.assertEqual(len(set(tags)), 5)
+        for tag in tags:
+            self.assertEqual(len(tag), CAPABILITY_TAG_HEX_LEN)
+            self.assertTrue(all(ch in "0123456789abcdef" for ch in tag))
 
         # Any 1-bit change in manifest atomically rotates the root hash and all L1 tags
         mutated = json.loads(json.dumps(STANDARD_ZONE_MANIFEST))
